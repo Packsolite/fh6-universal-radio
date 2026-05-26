@@ -1,0 +1,23 @@
+{
+  "name": "fh6-universal-radio-tooling",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Lint/format tooling for the FH6 Universal Radio dashboard (ui/dist).",
+  "scripts": {
+    "format":       "prettier --write \"ui/dist/**/*.{js,css,html}\"",
+    "format:check": "prettier --check \"ui/dist/**/*.{js,css,html}\"",
+    "lint:js":      "eslint \"ui/dist/**/*.js\"",
+    "lint:css":     "stylelint \"ui/dist/**/*.css\"",
+    "lint":         "npm run lint:js && npm run lint:css",
+    "check":        "npm run format:check && npm run lint",
+    "fix":          "npm run format && eslint --fix \"ui/dist/**/*.js\" && stylelint --fix \"ui/dist/**/*.css\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "eslint": "^9.15.0",
+    "globals": "^15.12.0",
+    "prettier": "^3.3.3",
+    "stylelint": "^16.10.0",
+    "stylelint-config-standard": "^36.0.1"
+  }
+}
