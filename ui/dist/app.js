@@ -147,6 +147,7 @@ const SCHEMA = [
     ["volume_normalization", "Normalize loudness",        "checkbox"],
     ["equalizer_enabled",    "Equalizer",                 "checkbox"],
     ["equalizer_bands",      "Equalizer bands",           "bands"],
+    ["force_stereo_audio",   "Force stereo audio",        "checkbox"],
   ]],
 ];
 

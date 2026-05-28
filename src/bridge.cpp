@@ -127,6 +127,7 @@ void run_bridge(HMODULE self) noexcept {
 
     fmod_bridge::DSPBridge bridge{mgr, fns};
     bridge.set_gain(cfg.audio.output_gain);
+    bridge.set_force_stereo_audio(cfg.playback.force_stereo_audio);
 
     std::unique_ptr<fmod_bridge::ControlLoop> ctrl;
     if (fns.ready())
@@ -144,6 +145,7 @@ void run_bridge(HMODULE self) noexcept {
         // Push the gain to both: the control loop's ramper otherwise snaps
         // the bridge value back to its own cached target on the next tick.
         bridge.set_gain(c.audio.output_gain);
+        bridge.set_force_stereo_audio(c.playback.force_stereo_audio);
         if (ctrl_ptr) ctrl_ptr->set_configured_gain(c.audio.output_gain);
         if (auto* local = dynamic_cast<sources::LocalFileSource*>(mgr.find("local_files"))) {
             local->set_shuffle(c.local_files.shuffle);

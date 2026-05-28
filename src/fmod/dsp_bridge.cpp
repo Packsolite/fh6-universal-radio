@@ -40,7 +40,7 @@ constexpr FMODSig kAnchored[] = {
 // FMOD_LOOP_NORMAL: makes the channel loop forever on its source sample.
 // Set once at install time so the placeholder sample doesn't end and
 // drop the channel out from under our DSP.
-constexpr uint32_t kFmodLoopNormal = 0x2 | 0x8;  // FMOD_LOOP_NORMAL | FMOD_2D
+constexpr uint32_t kFmodLoopNormal = 0x2;
 
 // FMOD's `Handle::open` / `Handle::unlock` have no .rdata anchor; we match
 // their (unique) prologues directly.
@@ -246,10 +246,19 @@ void DSPBridge::install_dsp_locked(uint32_t handle) noexcept {
     // handle when the user toggles the in-game radio.
     if (fns_.channel_control_set_mode) {
         uint32_t mrc = ~0u;
-        if (!seh_call([&] { mrc = fns_.channel_control_set_mode(channel, kFmodLoopNormal); }) ||
+        uint32_t mode = force_stereo_audio() ? kFmodLoopNormal : (kFmodLoopNormal | 0x8);
+        if (!seh_call([&] { mrc = fns_.channel_control_set_mode(channel, mode); }) ||
             mrc != 0) {
             log::warn("[dsp] setMode(FMOD_LOOP_NORMAL) failed r={}; channel may die early", mrc);
         }
+    }
+}
+
+void DSPBridge::set_force_stereo_audio(bool v) noexcept {
+    bool old = force_stereo_audio_.exchange(v, std::memory_order_release);
+    if (old != v && current_handle_ && fns_.channel_control_set_mode) {
+        uint32_t mode = v ? 0x2 : (0x2 | 0x8);
+        seh_call([&] { fns_.channel_control_set_mode(current_handle_, mode); });
     }
 }
 
@@ -300,12 +309,14 @@ uint32_t __stdcall DSPBridge::read_callback(void* /*dsp_state*/, float* in_buf, 
     if (!b || !out_buf) return 0;
     const DSPMode m = b->mode();
 
-    // Force FMOD to treat our DSP output as purely Stereo (2 channels).
-    // This allows the game's 3D panner to correctly spatialize the audio into
-    // the Surround Sound space (5.1/7.1). If we don't do this, the 3D panner
-    // receives a 5.1/7.1 signal and distorts it terribly.
-    if (out_channels) *out_channels = 2;
-    int32_t out_ch = 2;
+    // Force FMOD to treat our DSP output as Mono (1 channel) by default.
+    // The radio is a 3D point-source in the game world; feeding stereo into
+    // a 3D panner causes phase cancellation (metallic/robotic sound).
+    // A true mono signal lets the panner spatialize cleanly.
+    // If force_stereo_audio is enabled, we revert to Stereo.
+    bool force_stereo = b->force_stereo_audio();
+    if (out_channels) *out_channels = force_stereo ? 2 : 1;
+    int32_t out_ch = force_stereo ? 2 : 1;
     const std::size_t total = static_cast<std::size_t>(length) * out_ch;
 
     auto stats = [&] {
