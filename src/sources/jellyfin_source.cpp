@@ -376,7 +376,10 @@ void JellyfinSource::set_ffmpeg_path(std::filesystem::path p) {
 }
 
 void JellyfinSource::set_playback_options(const PlaybackConfig& opts) {
-    eq_.set_options(opts.equalizer_enabled, opts.equalizer_bands, 48000.0f);
+    {
+        std::scoped_lock lk{mu_};
+        eq_.set_options(opts.equalizer_enabled, opts.equalizer_bands, 48000.0f);
+    }
     // loudnorm is in the ffmpeg argv; new state takes effect on the next track.
     volume_norm_.store(opts.volume_normalization, std::memory_order_release);
 }
