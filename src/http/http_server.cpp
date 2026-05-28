@@ -232,6 +232,7 @@ constexpr std::string_view status_text(int code) noexcept {
         case 200: return "OK";
         case 400: return "Bad Request";
         case 404: return "Not Found";
+        case 502: return "Bad Gateway";
         default:  return "Internal Server Error";
     }
 }
