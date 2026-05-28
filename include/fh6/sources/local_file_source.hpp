@@ -14,7 +14,7 @@ namespace fh6::sources {
 
 class LocalFileSource final : public IAudioSource {
 public:
-    explicit LocalFileSource(LocalFilesConfig cfg);
+    LocalFileSource(LocalFilesConfig cfg, std::filesystem::path ffmpeg_path);
     ~LocalFileSource() override;
 
     std::string_view name() const noexcept override { return "local_files"; }
@@ -35,6 +35,7 @@ public:
 
     void set_directory(std::filesystem::path dir, bool recursive);
     void set_shuffle(bool shuffle);
+    void set_ffmpeg_path(std::filesystem::path p);
     void set_playback_options(const PlaybackConfig& opts) override;
     std::vector<std::string> playlist_snapshot() const;
 
@@ -52,9 +53,11 @@ public:
 private:
     void rebuild_playlist();
     bool open_track(std::size_t index);
+    bool open_track_ffmpeg(const std::filesystem::path& path);
     void close_current();
 
     LocalFilesConfig cfg_;
+    std::filesystem::path ffmpeg_path_;
     std::vector<std::filesystem::path> playlist_;
     std::size_t cursor_ = 0;
 

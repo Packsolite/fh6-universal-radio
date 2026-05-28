@@ -28,7 +28,8 @@ struct LocalFilesConfig {
     std::filesystem::path music_dir;
     bool recursive = true;
     bool shuffle   = true;
-    std::vector<std::string> supported_formats{"mp3", "flac", "wav", "ogg", "m4a", "opus"};
+    std::vector<std::string> supported_formats{"mp3",  "flac", "wav", "ogg", "m4a",
+                                                "opus", "aac",  "wma", "aiff", "aif"};
 };
 
 struct YouTubeMusicConfig {

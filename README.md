@@ -15,10 +15,14 @@ An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio stati
 
 ## Features
 
-- **Local files**: point it at any folder, plays MP3 / FLAC / WAV / OGG / M4A / OPUS.
+- **Local files**: point it at any folder. MP3 / FLAC / WAV / OGG play out of the box; M4A / AAC / OPUS / WMA / etc. play if `ffmpeg` is installed (same binary as YouTube Music below).
 - **YouTube Music**: paste any video, playlist, or YT Music URL from the dashboard.
 - **In-game radio integration**: audio is routed through FH6's radio bus, fades with menus and reacts to in-game volume like every other station.
 - **Live dashboard** at `http://localhost:8420`: switch source, transport controls, volume, settings.
+- **Race start action**: on race begin, advance to next track, restart the current one, or leave it alone.
+- **Quick station skip**: tune the radio knob away and back within 1s to skip the current track.
+- **Loudness normalization**: For consistent volume across tracks.
+- **5-band equalizer**: 60 Hz / 250 Hz / 1 kHz / 4 kHz / 12 kHz peaking biquads, ±6 dB per band, applied producer-side at 48 kHz before audio hits the game.
 
 ## Install
 
@@ -63,7 +67,8 @@ Requires **Visual Studio 2022+** with the *Desktop development with C++* workloa
 | New radio station doesn't show in-game | **Audio > Streamer Mode** is off. Turn it on, restart the game. |
 | Game crashes on launch | Antivirus quarantined `version.dll`. Add an exclusion for the game folder. |
 | Local files don't play | No `music_dir` set, or the folder only has unsupported formats. Set one from the dashboard. |
-| YouTube Music produces no audio | Check `%TEMP%\fh6-yt-stderr.log` (child stderr lands there). Usually missing yt-dlp/ffmpeg, expired cookies, or geo/format restrictions. |
+| `[local] failed to open ... .m4a` (or `.opus`, `.aac`, ...) | The built-in decoder handles MP3/FLAC/WAV/OGG only; other formats are routed through `ffmpeg`. Install it (`winget install Gyan.FFmpeg`) and either put it on `PATH` or set the path under **Settings > YouTube Music > ffmpeg_path**. |
+| YouTube Music produces no audio | Check `%TEMP%\fh6-stderr.log` (helper-process stderr lands there). Usually missing yt-dlp/ffmpeg, expired cookies, or geo/format restrictions. |
 
 ## Why this exists
 

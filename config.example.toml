@@ -16,7 +16,8 @@ enabled            = true
 music_dir          = ''                # blank => set from the dashboard
 recursive          = true
 shuffle            = true
-supported_formats  = ["mp3", "flac", "wav", "ogg", "m4a", "opus"]
+# mp3/flac/wav/ogg decode natively; the rest goes through ffmpeg if available.
+supported_formats  = ["mp3", "flac", "wav", "ogg", "m4a", "opus", "aac", "wma", "aiff", "aif"]
 
 [youtube_music]
 enabled            = false
