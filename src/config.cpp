@@ -102,6 +102,8 @@ Config load_config(const std::filesystem::path& path) {
         pick<bool>(pb, "volume_normalization", cfg.playback.volume_normalization);
     cfg.playback.equalizer_enabled =
         pick<bool>(pb, "equalizer_enabled", cfg.playback.equalizer_enabled);
+    cfg.playback.force_stereo_audio =
+        pick<bool>(pb, "force_stereo_audio", cfg.playback.force_stereo_audio);
     try {
         if (pb.contains("equalizer_bands")) {
             auto v = toml::find<std::vector<double>>(pb, "equalizer_bands");
@@ -244,6 +246,7 @@ void save_config(const std::filesystem::path& path, const Config& cfg) {
     e.kv("volume_normalization", cfg.playback.volume_normalization);
     e.kv("equalizer_enabled", cfg.playback.equalizer_enabled);
     e.kv_floats("equalizer_bands", std::span<const float>{cfg.playback.equalizer_bands});
+    e.kv("force_stereo_audio", cfg.playback.force_stereo_audio);
 
     auto tmp  = path;
     tmp      += ".tmp";

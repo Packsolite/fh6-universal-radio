@@ -5,6 +5,7 @@
 #include "fh6/safe_mem.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace fh6::fmod_bridge {
@@ -38,9 +39,30 @@ constexpr FMODSig kAnchored[] = {
 };
 
 // FMOD_LOOP_NORMAL: makes the channel loop forever on its source sample.
-// Set once at install time so the placeholder sample doesn't end and
-// drop the channel out from under our DSP.
+// Set at install time (and re-set on config change) so the placeholder
+// sample doesn't end and drop the channel out from under our DSP.
 constexpr uint32_t kFmodLoopNormal = 0x2;
+
+// FMOD_2D: switches the channel out of 3D spatialisation. Default path
+// (force_stereo) sets this bit and feeds stereo, so the channel plays
+// back as a regular non-positional stereo source. When force_stereo is
+// off we clear the bit and feed mono, because stereo into a 3D panner
+// phase-cancels into a metallic mess.
+constexpr uint32_t kFmod2D = 0x8;
+
+inline uint32_t channel_mode(bool force_stereo) noexcept {
+    return kFmodLoopNormal | (force_stereo ? kFmod2D : 0u);
+}
+
+// Smooth saturation near full-scale. Transparent for |x| <= knee and
+// asymptotically approaches ±1 above, so clean signals pass through
+// untouched and only over-driven peaks get rounded off.
+inline float soft_clip(float x) noexcept {
+    constexpr float k = 0.85f;
+    const float a    = std::fabs(x);
+    const float over = std::max(0.0f, a - k) / (1.0f - k);
+    return std::copysign(std::min(a, k) + (1.0f - k) * over / (1.0f + over), x);
+}
 
 // FMOD's `Handle::open` / `Handle::unlock` have no .rdata anchor; we match
 // their (unique) prologues directly.
@@ -175,11 +197,12 @@ bool DSPBridge::validate_handle(uint32_t handle) const noexcept {
 
 void DSPBridge::release_current_dsp_locked() noexcept {
     if (!current_dsp_) return;
-    if (current_handle_)
-        seh_call([&] { fns_.channel_control_rem_dsp(current_handle_, current_dsp_); });
+    const uint32_t handle = current_handle_.load(std::memory_order_relaxed);
+    if (handle)
+        seh_call([&] { fns_.channel_control_rem_dsp(handle, current_dsp_); });
     seh_call([&] { fns_.dsp_release(current_dsp_); });
-    current_dsp_    = nullptr;
-    current_handle_ = 0;
+    current_dsp_ = nullptr;
+    current_handle_.store(0, std::memory_order_release);
 }
 
 void DSPBridge::install_dsp_locked(uint32_t handle) noexcept {
@@ -236,8 +259,8 @@ void DSPBridge::install_dsp_locked(uint32_t handle) noexcept {
         return;
     }
 
-    current_dsp_    = dsp;
-    current_handle_ = handle;
+    current_dsp_ = dsp;
+    current_handle_.store(handle, std::memory_order_release);
     log::info("[dsp] installed dsp={} on handle=0x{:X}", dsp, handle);
 
     // Pin the channel in loop mode so FMOD doesn't tear it down when the
@@ -245,12 +268,21 @@ void DSPBridge::install_dsp_locked(uint32_t handle) noexcept {
     // the channel after ~2 min and Forza only allocates a replacement
     // handle when the user toggles the in-game radio.
     if (fns_.channel_control_set_mode) {
-        uint32_t mrc = ~0u;
-        if (!seh_call([&] { mrc = fns_.channel_control_set_mode(channel, kFmodLoopNormal); }) ||
+        uint32_t mrc        = ~0u;
+        const uint32_t mode = channel_mode(force_stereo_audio());
+        if (!seh_call([&] { mrc = fns_.channel_control_set_mode(channel, mode); }) ||
             mrc != 0) {
-            log::warn("[dsp] setMode(FMOD_LOOP_NORMAL) failed r={}; channel may die early", mrc);
+            log::warn("[dsp] setMode(0x{:X}) failed r={}; channel may die early", mode, mrc);
         }
     }
+}
+
+void DSPBridge::set_force_stereo_audio(bool v) noexcept {
+    const bool old = force_stereo_audio_.exchange(v, std::memory_order_release);
+    if (old == v || !fns_.channel_control_set_mode) return;
+    const uint32_t handle = current_handle_.load(std::memory_order_acquire);
+    if (!handle) return;
+    seh_call([&] { fns_.channel_control_set_mode(handle, channel_mode(v)); });
 }
 
 void DSPBridge::set_target(const RadioInstance& inst, void* fmod_system) noexcept {
@@ -267,7 +299,8 @@ uint32_t DSPBridge::read_live_handle(std::byte* radio_stream) const noexcept {
 }
 
 bool DSPBridge::current_handle_alive() const noexcept {
-    return current_handle_ != 0 && fns_.ready() && validate_handle(current_handle_);
+    const uint32_t handle = current_handle_.load(std::memory_order_acquire);
+    return handle != 0 && fns_.ready() && validate_handle(handle);
 }
 
 bool DSPBridge::channel_handle_alive(std::byte* radio_stream) const noexcept {
@@ -277,11 +310,12 @@ bool DSPBridge::channel_handle_alive(std::byte* radio_stream) const noexcept {
 void DSPBridge::retarget_if_needed() noexcept {
     if (mode() != DSPMode::pcm || !fmod_system_) return;
     const uint32_t handle = read_live_handle(radio_stream_);
-    if (handle == current_handle_) return;
+    if (handle == current_handle_.load(std::memory_order_relaxed)) return;
     // No live handle on the RadioStreamFmod. If we still think we're installed
     // on a dead one, release it so we stop querying the stale handle.
     if (!handle) {
-        if (current_handle_) release_current_dsp_locked();
+        if (current_handle_.load(std::memory_order_relaxed))
+            release_current_dsp_locked();
         return;
     }
 
@@ -294,17 +328,20 @@ void DSPBridge::retarget_if_needed() noexcept {
 // (miniaudio / ffmpeg resample upstream), which is FMOD's master rate, so
 // the callback is a straight int16 -> float conversion with gain.
 uint32_t __stdcall DSPBridge::read_callback(void* /*dsp_state*/, float* in_buf, float* out_buf,
-                                            uint32_t length, int32_t in_channels,
+                                            uint32_t length, int32_t /*in_channels*/,
                                             int32_t* out_channels) {
     auto* b = g_bridge;
     if (!b || !out_buf) return 0;
     const DSPMode m = b->mode();
 
-    // Use only what FMOD allocated: out_buf is pre-sized by FMOD, writing
-    // more channels than requested is a heap overflow that crashes the mixer
-    // a few seconds later. If FMOD wants mono, downmix our stereo.
-    int32_t out_ch = in_channels > 0 ? in_channels : 2;
-    if (out_channels && *out_channels > 0) out_ch = *out_channels;
+    // Declare our DSP output: stereo (default, force_stereo path) or mono
+    // (when force_stereo is off and we're feeding the 3D panner -- stereo
+    // into a 3D panner phase-cancels into a metallic mess). FMOD does not
+    // re-query *out_channels after a mid-stream setMode, so we have to
+    // overwrite it unconditionally; clamping to its incoming value would
+    // pin us to whatever the channel was first allocated for (mono on the
+    // 3D radio channel) and silently ignore force_stereo.
+    const int32_t out_ch = b->force_stereo_audio() ? 2 : 1;
     if (out_channels) *out_channels = out_ch;
     const std::size_t total = static_cast<std::size_t>(length) * out_ch;
 
@@ -356,8 +393,8 @@ uint32_t __stdcall DSPBridge::read_callback(void* /*dsp_state*/, float* in_buf, 
         for (uint32_t f = 0; f < got_frames; ++f) {
             const float fl = scratch[f * 2 + 0] * scale;
             const float fr = scratch[f * 2 + 1] * scale;
-            const float L  = fl > 1.0f ? 1.0f : (fl < -1.0f ? -1.0f : fl);
-            const float R  = fr > 1.0f ? 1.0f : (fr < -1.0f ? -1.0f : fr);
+            const float L  = soft_clip(fl);
+            const float R  = soft_clip(fr);
 
             float* o = out_buf + static_cast<std::size_t>(produced + f) * out_ch;
             if (out_ch == 1) {

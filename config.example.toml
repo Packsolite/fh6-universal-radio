@@ -44,3 +44,4 @@ quick_station_skip   = false       # tune the radio away and back within 1s to s
 volume_normalization = false       # apply ReplayGain (local files) / EBU R128 loudnorm (YT) when on
 equalizer_enabled    = false
 equalizer_bands      = [0.0, 0.0, 0.0, 0.0, 0.0]   # 60/250/1000/4000/12000 Hz, [-6, +6] dB
+force_stereo_audio   = true        # off => mono + 2D path (clean 3D spatialisation)

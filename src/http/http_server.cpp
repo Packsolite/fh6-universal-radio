@@ -145,6 +145,7 @@ json config_to_json(const Config& c) {
              {"volume_normalization", c.playback.volume_normalization},
              {"equalizer_enabled", c.playback.equalizer_enabled},
              {"equalizer_bands", c.playback.equalizer_bands},
+             {"force_stereo_audio", c.playback.force_stereo_audio},
          }},
     };
 }
@@ -205,6 +206,8 @@ void apply_patch(Config& c, const json& j) {
             pull(*it, "quick_station_skip", c.playback.quick_station_skip);
         c.playback.volume_normalization =
             pull(*it, "volume_normalization", c.playback.volume_normalization);
+        c.playback.force_stereo_audio =
+            pull(*it, "force_stereo_audio", c.playback.force_stereo_audio);
         c.playback.equalizer_enabled =
             pull(*it, "equalizer_enabled", c.playback.equalizer_enabled);
         if (auto bands = it->find("equalizer_bands");

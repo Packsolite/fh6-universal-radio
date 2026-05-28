@@ -88,6 +88,9 @@ public:
     float gain() const noexcept { return gain_.load(std::memory_order_acquire); }
     void set_gain(float g) noexcept { gain_.store(g, std::memory_order_release); }
 
+    bool force_stereo_audio() const noexcept { return force_stereo_audio_.load(std::memory_order_acquire); }
+    void set_force_stereo_audio(bool v) noexcept;
+
     uint64_t underruns() const noexcept { return underruns_.load(std::memory_order_relaxed); }
     uint64_t call_count() const noexcept { return calls_.load(std::memory_order_relaxed); }
     uint32_t last_buffer_len() const noexcept { return last_len_.load(std::memory_order_relaxed); }
@@ -116,12 +119,15 @@ private:
 
     void* fmod_system_       = nullptr;
     void* current_dsp_       = nullptr;
-    uint32_t current_handle_ = 0;
+    // Read from the config-change thread via set_force_stereo_audio;
+    // mutated from the control-loop thread via install/release/retarget.
+    std::atomic<uint32_t> current_handle_{0};
     mutable uint32_t last_bad_handle_ = 0;  // suppress repeated rc=3 / SEH warnings for the same handle
     std::byte* radio_stream_ = nullptr;
 
     std::atomic<DSPMode> mode_{DSPMode::pcm};
     std::atomic<float> gain_{1.0f};
+    std::atomic<bool> force_stereo_audio_{false};
 
     std::atomic<uint64_t> underruns_{0};
     std::atomic<uint64_t> calls_{0};
