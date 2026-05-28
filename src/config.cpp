@@ -57,6 +57,7 @@ Config load_config(const std::filesystem::path& path) {
     cfg.general.default_source = pick<std::string>(g, "default_source", cfg.general.default_source);
     cfg.general.fallback_source =
         pick<std::string>(g, "fallback_source", cfg.general.fallback_source);
+    cfg.general.ffmpeg_path = pick_path(g, "ffmpeg_path");
 
     const auto& lf            = section(root, "local_files");
     cfg.local_files.enabled   = pick<bool>(lf, "enabled", cfg.local_files.enabled);
@@ -74,9 +75,16 @@ Config load_config(const std::filesystem::path& path) {
     cfg.youtube_music.enabled          = pick<bool>(ym, "enabled", cfg.youtube_music.enabled);
     cfg.youtube_music.cookies_path     = pick_path(ym, "cookies_path");
     cfg.youtube_music.yt_dlp_path      = pick_path(ym, "yt_dlp_path");
-    cfg.youtube_music.ffmpeg_path      = pick_path(ym, "ffmpeg_path");
     cfg.youtube_music.default_playlist = pick<std::string>(ym, "default_playlist", "");
     cfg.youtube_music.shuffle          = pick<bool>(ym, "shuffle", cfg.youtube_music.shuffle);
+
+    const auto& jf = section(root, "jellyfin");
+    cfg.jellyfin.enabled = pick<bool>(jf, "enabled", cfg.jellyfin.enabled);
+    cfg.jellyfin.server_url = pick<std::string>(jf, "server_url", cfg.jellyfin.server_url);
+    cfg.jellyfin.api_key = pick<std::string>(jf, "api_key", cfg.jellyfin.api_key);
+    cfg.jellyfin.user_id = pick<std::string>(jf, "user_id", cfg.jellyfin.user_id);
+    cfg.jellyfin.default_playlist = pick<std::string>(jf, "default_playlist", cfg.jellyfin.default_playlist);
+    cfg.jellyfin.shuffle = pick<bool>(jf, "shuffle", cfg.jellyfin.shuffle);
 
     const auto& au = section(root, "audio");
     cfg.audio.output_gain =
@@ -203,6 +211,7 @@ void save_config(const std::filesystem::path& path, const Config& cfg) {
     e.kv("ring_buffer_mb", (int64_t)cfg.general.ring_buffer_mb);
     e.kv("default_source", cfg.general.default_source);
     e.kv("fallback_source", cfg.general.fallback_source);
+    e.kv_path("ffmpeg_path", cfg.general.ffmpeg_path);
 
     e.header("local_files");
     e.kv("enabled", cfg.local_files.enabled);
@@ -215,9 +224,16 @@ void save_config(const std::filesystem::path& path, const Config& cfg) {
     e.kv("enabled", cfg.youtube_music.enabled);
     e.kv_path("cookies_path", cfg.youtube_music.cookies_path);
     e.kv_path("yt_dlp_path", cfg.youtube_music.yt_dlp_path);
-    e.kv_path("ffmpeg_path", cfg.youtube_music.ffmpeg_path);
     e.kv("default_playlist", cfg.youtube_music.default_playlist);
     e.kv("shuffle", cfg.youtube_music.shuffle);
+
+    e.header("jellyfin");
+    e.kv("enabled", cfg.jellyfin.enabled);
+    e.kv("server_url", cfg.jellyfin.server_url);
+    e.kv("api_key", cfg.jellyfin.api_key);
+    e.kv("user_id", cfg.jellyfin.user_id);
+    e.kv("default_playlist", cfg.jellyfin.default_playlist);
+    e.kv("shuffle", cfg.jellyfin.shuffle);
 
     e.header("audio");
     e.kv("output_gain", (double)cfg.audio.output_gain);

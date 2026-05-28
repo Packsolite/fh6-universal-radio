@@ -5,10 +5,10 @@
 #include "fh6/log.hpp"
 #include "fh6/sources/local_file_source.hpp"
 #include "fh6/sources/youtube_music_source.hpp"
+#include "fh6/sources/jellyfin_source.hpp"
 
 #include <nlohmann/json.hpp>
 
-#define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -107,6 +107,7 @@ json config_to_json(const Config& c) {
              {"ring_buffer_mb", c.general.ring_buffer_mb},
              {"default_source", c.general.default_source},
              {"fallback_source", c.general.fallback_source},
+             {"ffmpeg_path", path_s(c.general.ffmpeg_path)},
          }},
         {"local_files",
          json{
@@ -121,9 +122,17 @@ json config_to_json(const Config& c) {
              {"enabled", c.youtube_music.enabled},
              {"cookies_path", path_s(c.youtube_music.cookies_path)},
              {"yt_dlp_path", path_s(c.youtube_music.yt_dlp_path)},
-             {"ffmpeg_path", path_s(c.youtube_music.ffmpeg_path)},
              {"default_playlist", c.youtube_music.default_playlist},
              {"shuffle", c.youtube_music.shuffle},
+         }},
+        {"jellyfin",
+         json{
+             {"enabled", c.jellyfin.enabled},
+             {"server_url", c.jellyfin.server_url},
+             {"api_key", c.jellyfin.api_key},
+             {"user_id", c.jellyfin.user_id},
+             {"default_playlist", c.jellyfin.default_playlist},
+             {"shuffle", c.jellyfin.shuffle},
          }},
         {"audio",
          json{
@@ -159,6 +168,7 @@ void apply_patch(Config& c, const json& j) {
         c.general.ring_buffer_mb  = pull(*it, "ring_buffer_mb", c.general.ring_buffer_mb);
         c.general.default_source  = pull(*it, "default_source", c.general.default_source);
         c.general.fallback_source = pull(*it, "fallback_source", c.general.fallback_source);
+        c.general.ffmpeg_path     = pull_path(*it, "ffmpeg_path", c.general.ffmpeg_path);
     }
     if (auto it = j.find("local_files"); it != j.end()) {
         c.local_files.enabled   = pull(*it, "enabled", c.local_files.enabled);
@@ -172,10 +182,17 @@ void apply_patch(Config& c, const json& j) {
         c.youtube_music.enabled      = pull(*it, "enabled", c.youtube_music.enabled);
         c.youtube_music.cookies_path = pull_path(*it, "cookies_path", c.youtube_music.cookies_path);
         c.youtube_music.yt_dlp_path  = pull_path(*it, "yt_dlp_path", c.youtube_music.yt_dlp_path);
-        c.youtube_music.ffmpeg_path  = pull_path(*it, "ffmpeg_path", c.youtube_music.ffmpeg_path);
         c.youtube_music.default_playlist =
             pull(*it, "default_playlist", c.youtube_music.default_playlist);
         c.youtube_music.shuffle = pull(*it, "shuffle", c.youtube_music.shuffle);
+    }
+    if (auto it = j.find("jellyfin"); it != j.end()) {
+        c.jellyfin.enabled          = pull(*it, "enabled", c.jellyfin.enabled);
+        c.jellyfin.server_url       = pull(*it, "server_url", c.jellyfin.server_url);
+        c.jellyfin.api_key          = pull(*it, "api_key", c.jellyfin.api_key);
+        c.jellyfin.user_id          = pull(*it, "user_id", c.jellyfin.user_id);
+        c.jellyfin.default_playlist = pull(*it, "default_playlist", c.jellyfin.default_playlist);
+        c.jellyfin.shuffle          = pull(*it, "shuffle", c.jellyfin.shuffle);
     }
     if (auto it = j.find("audio"); it != j.end()) {
         c.audio.output_gain = pull(*it, "output_gain", c.audio.output_gain);
@@ -214,6 +231,7 @@ constexpr std::string_view status_text(int code) noexcept {
         case 200: return "OK";
         case 400: return "Bad Request";
         case 404: return "Not Found";
+        case 502: return "Bad Gateway";
         default:  return "Internal Server Error";
     }
 }
@@ -497,6 +515,17 @@ struct HttpServer::Impl {
             auto shuffle = json::parse(req.body).at("shuffle").get<bool>();
             yt->set_shuffle(shuffle);
             store.patch([shuffle](Config& c) { c.youtube_music.shuffle = shuffle; });
+            return ok();
+        }
+        if (m == "POST" && p == "/api/source/jellyfin/cast") {
+            auto* jf = find_typed<sources::JellyfinSource>("jellyfin");
+            if (!jf) return fail(404, "jellyfin not registered");
+            auto playlist_id = json::parse(req.body).value("playlist_id", std::string{});
+            if (playlist_id.empty()) return fail(400, "playlist_id required");
+            const bool was_active = (mgr.active() == jf);
+            if (!jf->cast(std::move(playlist_id))) return fail(502, "jellyfin fetch failed");
+            if (was_active) mgr.ring().drain();
+            mgr.switch_to("jellyfin");
             return ok();
         }
         if (m == "POST" && p == "/api/source/local_files/rescan") {

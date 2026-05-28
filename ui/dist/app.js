@@ -103,6 +103,9 @@ function renderSources() {
 
   // Cast box only makes sense while YT is registered.
   $("#yt-cast-card").hidden = !available.some(s => s.name === "youtube_music");
+
+  // Cast box only makes sense while Jellyfin is registered.
+  $("#jf-cast-card").hidden = !available.some(s => s.name === "jellyfin");
 }
 
 let volDirty = false;
@@ -119,10 +122,11 @@ const EQ_BAND_LABELS = ["60 Hz", "250 Hz", "1 kHz", "4 kHz", "12 kHz"];
 
 const SCHEMA = [
   ["general", "General", [
-    ["port",            "Port",            "number", 1, 65535],
-    ["ring_buffer_mb",  "Ring buffer (MB)","number", 1, 64],
-    ["default_source",  "Default source",  "text"],
-    ["fallback_source", "Fallback source", "text"],
+    ["port",            "Port",                   "number", 1, 65535],
+    ["ring_buffer_mb",  "Ring buffer (MB)",       "number", 1, 64],
+    ["default_source",  "Default source",         "text"],
+    ["fallback_source", "Fallback source",        "text"],
+    ["ffmpeg_path",     "ffmpeg path (optional)", "text"],
   ]],
   ["local_files", "Local files", [
     ["enabled",     "Enabled",        "checkbox"],
@@ -134,9 +138,16 @@ const SCHEMA = [
     ["enabled",          "Enabled",                "checkbox"],
     ["cookies_path",     "cookies.txt (optional)", "text"],
     ["yt_dlp_path",      "yt-dlp path (optional)", "text"],
-    ["ffmpeg_path",      "ffmpeg path (optional)", "text"],
     ["default_playlist", "Default playlist URL",   "text"],
     ["shuffle",          "Shuffle",                "checkbox"],
+  ]],
+  ["jellyfin", "Jellyfin", [
+    ["enabled",          "Enabled",          "checkbox"],
+    ["server_url",       "Server URL",       "text"],
+    ["user_id",          "User ID",          "text"],
+    ["api_key",          "API Key",          "text"],
+    ["default_playlist", "Default Playlist", "text"],
+    ["shuffle",          "Shuffle",          "checkbox"],
   ]],
   ["audio", "Audio", [
     ["output_gain", "Output gain", "number", 0, 1, 0.01],
@@ -275,6 +286,17 @@ function wire() {
     try {
       await api.send("/api/source/youtube_music/shuffle", { shuffle });
       toast(shuffle ? "Shuffle on" : "Shuffle off");
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#jf-cast").addEventListener("submit", async e => {
+    e.preventDefault();
+    const playlist_id = $("#jf-url").value.trim();
+    if (!playlist_id) return;
+    try {
+      await api.send("/api/source/jellyfin/cast", { playlist_id });
+      $("#jf-url").value = "";
+      toast("Playing playlist...");
     } catch (err) { toast(err.message, true); }
   });
 

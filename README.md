@@ -6,7 +6,7 @@
 
 <p align="center"><img src="assets/banner.png" alt="FH6 Universal Radio" /></p>
 
-An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio station fed from your **local music** or **YouTube Music**, controlled from a browser dashboard.
+An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio station fed from your **local music**, **YouTube Music**, or **Jellyfin** server, controlled from a browser dashboard.
 
 <p align="center">
   <img src="assets/ingame.png" alt="In-game radio station" width="49%" />
@@ -17,6 +17,7 @@ An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio stati
 
 - **Local files**: point it at any folder. MP3 / FLAC / WAV / OGG play out of the box; M4A / AAC / OPUS / WMA / etc. play if `ffmpeg` is installed (same binary as YouTube Music below).
 - **YouTube Music**: paste any video, playlist, or YT Music URL from the dashboard.
+- **Jellyfin**: stream playlists from your own Jellyfin server.
 - **In-game radio integration**: audio is routed through FH6's radio bus, fades with menus and reacts to in-game volume like every other station.
 - **Live dashboard** at `http://localhost:8420`: switch source, transport controls, volume, settings.
 - **Race start action**: on race begin, advance to next track, restart the current one, or leave it alone.
@@ -31,16 +32,24 @@ An open-source radio mod for **Forza Horizon 6**. Adds a new in-game radio stati
 3. Extract the ZIP into your Forza Horizon 6 install folder (next to `forzahorizon6.exe`). Overwrite when prompted.
 4. Launch the game. In **Audio settings**, set **Radio DJ = Off** and **Streamer Mode = On**.
 5. Cycle through radio stations until you land on the new one.
-6. Open <http://localhost:8420> in any browser on the same machine or LAN.
+6. Open <http://localhost:8420> in any browser on the same machine. From another device on the same network, use your PC's local IP (e.g. `http://192.168.1.42:8420`), run `ipconfig` in a Command Prompt to find it.
 
 ### YouTube Music
 
-YouTube playback requires three external tools on disk:
+YouTube playback requires three external tools. Open a **Command Prompt** and run:
 
-- [`yt-dlp`](https://github.com/yt-dlp/yt-dlp/releases) and [`ffmpeg`](https://www.gyan.dev/ffmpeg/builds/) either on your `PATH`, or pointed at explicitly in the dashboard under **Settings > YouTube Music**.
-- [`deno`](https://deno.com/) on `PATH`. Install with `winget install DenoLand.Deno` (or `irm https://deno.land/install.ps1 | iex`).
+```
+winget install yt-dlp.yt-dlp
+winget install Gyan.FFmpeg
+winget install DenoLand.Deno
+```
 
-Private/age-restricted content also needs a Netscape `cookies.txt` exported from your browser.
+Then restart the game.
+
+`yt-dlp` can also be pointed at explicitly in the dashboard under **Settings > YouTube Music** if you prefer a manual install.
+`ffmpeg` can also be configured under **Settings > General > ffmpeg path**.
+
+Private/age-restricted content also needs a Netscape `cookies.txt` exported from your browser. Use an extension like **Get cookies.txt LOCALLY** to export it.
 
 ## Uninstall
 
@@ -50,13 +59,28 @@ Private/age-restricted content also needs a Netscape `cookies.txt` exported from
 
 ## Build from source
 
-Requires **Visual Studio 2022+** with the *Desktop development with C++* workload (CMake is bundled) and the **Forza Horizon 6** radio-station media overlay from any existing radio mod ZIP. The overlay is mod-agnostic and the assets are modified copies of game files, so we don't ship them.
+The output is always a Windows `version.dll`. You also need the radio-station media overlay from any existing radio mod ZIP. It's mod-agnostic, but the assets are modified copies of game files so we don't ship them.
+
+### Windows
+
+Requires **Visual Studio 2022+** with the *Desktop development with C++* workload (CMake is bundled).
 
 ```powershell
 .\scripts\get-deps.ps1                                                  # one-time: header-only deps
 .\scripts\build.ps1                                                     # compile + stage dist\
 .\scripts\fetch-media.ps1 -Source "C:\path\to\radio-mod.zip"            # radio-station overlay
 .\scripts\install.ps1 -GameDir "C:\XboxGames\Forza Horizon 6\Content"   # copy into game
+```
+
+### Linux (cross-compile to Windows)
+
+Requires **CMake** and **llvm-mingw** (the Clang-based MinGW-w64 toolchain, since the codebase uses MSVC SEH which GCC-mingw doesn't implement). On Arch: `sudo pacman -S llvm-mingw cmake`. On other distros, grab a release from [mstorsjo/llvm-mingw](https://github.com/mstorsjo/llvm-mingw/releases) and unpack it under `/opt/llvm-mingw` (the build script auto-detects that path).
+
+```bash
+./scripts/get-deps.sh                                                   # one-time: header-only deps
+./scripts/build.sh                                                      # compile + stage dist/
+./scripts/fetch-media.sh /path/to/radio-mod.zip                         # radio-station overlay
+./scripts/install.sh ~/.steam/steam/steamapps/common/ForzaHorizon6      # copy into game (Proton prefix)
 ```
 
 ## Troubleshooting
@@ -67,8 +91,9 @@ Requires **Visual Studio 2022+** with the *Desktop development with C++* workloa
 | New radio station doesn't show in-game | **Audio > Streamer Mode** is off. Turn it on, restart the game. |
 | Game crashes on launch | Antivirus quarantined `version.dll`. Add an exclusion for the game folder. |
 | Local files don't play | No `music_dir` set, or the folder only has unsupported formats. Set one from the dashboard. |
-| `[local] failed to open ... .m4a` (or `.opus`, `.aac`, ...) | The built-in decoder handles MP3/FLAC/WAV/OGG only; other formats are routed through `ffmpeg`. Install it (`winget install Gyan.FFmpeg`) and either put it on `PATH` or set the path under **Settings > YouTube Music > ffmpeg_path**. |
+| `[local] failed to open ... .m4a` (or `.opus`, `.aac`, ...) | The built-in decoder handles MP3/FLAC/WAV/OGG only; other formats are routed through `ffmpeg`. Install it (`winget install Gyan.FFmpeg`) and either put it on `PATH` or set the path under **Settings > General > ffmpeg path**. |
 | YouTube Music produces no audio | Check `%TEMP%\fh6-stderr.log` (helper-process stderr lands there). Usually missing yt-dlp/ffmpeg, expired cookies, or geo/format restrictions. |
+| Jellyfin cast returns "fetch failed" (502) | Check server URL, API key, and user ID under **Settings > Jellyfin**, that the playlist ID exists, and that the server is reachable from this machine. Jellyfin transcodes to PCM via `ffmpeg`, so the configured ffmpeg path must be valid. |
 
 ## Why this exists
 
@@ -88,4 +113,4 @@ Released under the [GNU General Public License v3.0](LICENSE). You're free to us
 
 ## Disclaimer
 
-Unofficial fan-made mod. Not affiliated with, endorsed by, or connected to Turn 10 Studios, Playground Games, Xbox Game Studios, Microsoft, Google, or YouTube. All trademarks belong to their respective owners. Use at your own risk.
+Unofficial fan-made mod. Not affiliated with, endorsed by, or connected to Turn 10 Studios, Playground Games, Xbox Game Studios, Microsoft, Google, YouTube, or Jellyfin (Jellyfin LLC). All trademarks belong to their respective owners. Use at your own risk.
