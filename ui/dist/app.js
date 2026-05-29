@@ -31,6 +31,94 @@ const toast = (msg, isErr = false) => {
   const el = document.createElement("div");
   el.className = "toast" + (isErr ? " err" : "");
   el.textContent = msg;
+
+(() => {
+  let extDevices = [];
+  let extEndpoint = "";
+  let extLoaded = false;
+
+  function ensureExternalAudioCard() {
+    let card = $("#external-audio-card");
+    if (card) return card;
+
+    card = document.createElement("section");
+    card.id = "external-audio-card";
+    card.className = "card";
+    card.hidden = true;
+    card.innerHTML = `
+      <h2>External Audio Device</h2>
+      <p class="muted">Select the Windows playback device captured by External Audio.</p>
+      <div class="row">
+        <select id="external-audio-device"></select>
+        <button id="external-audio-refresh" type="button">Refresh</button>
+        <button id="external-audio-save" type="button">Save</button>
+      </div>
+      <p id="external-audio-hint" class="muted"></p>
+    `;
+
+    const sources = $("#sources");
+    const sourceCard = sources?.closest?.(".card") || sources?.parentElement;
+    if (sourceCard?.parentElement) sourceCard.insertAdjacentElement("afterend", card);
+    else document.body.appendChild(card);
+
+    $("#external-audio-refresh", card).addEventListener("click", async () => {
+      await loadExternalAudioDevices(true);
+    });
+
+    $("#external-audio-save", card).addEventListener("click", async () => {
+      const select = $("#external-audio-device", card);
+      try {
+        const r = await api.send("/api/external_audio/config", { endpoint_id: select.value }, "PUT");
+        extEndpoint = r.endpoint_id ?? select.value;
+        toast("External Audio device saved");
+        await loadExternalAudioDevices(true);
+      } catch (e) {
+        toast(e.message, true);
+      }
+    });
+
+    return card;
+  }
+
+  async function loadExternalAudioDevices(force = false) {
+    if (extLoaded && !force) return;
+    try {
+      const r = await api.get("/api/external_audio/devices");
+      extDevices = Array.isArray(r.devices) ? r.devices : [];
+      extEndpoint = r.endpoint_id || "";
+      extLoaded = true;
+      renderExternalAudioCard();
+    } catch {
+      extDevices = [];
+    }
+  }
+
+  function renderExternalAudioCard() {
+    const card = ensureExternalAudioCard();
+    const available = state?.sources?.available?.some(s => s.name === "external_audio");
+    card.hidden = !available;
+    if (!available) return;
+
+    loadExternalAudioDevices();
+
+    const select = $("#external-audio-device", card);
+    const sig = extEndpoint + "|" + extDevices.map(d => `${d.id}:${d.name}:${d.is_default}`).join("|");
+    if (select.dataset.sig === sig) return;
+    select.dataset.sig = sig;
+    select.innerHTML = "";
+    select.add(new Option("Default Windows playback device", "", false, extEndpoint === ""));
+    for (const d of extDevices) {
+      select.add(new Option(`${d.name || d.id}${d.is_default ? " (current default)" : ""}`, d.id, false, extEndpoint === d.id));
+    }
+    $("#external-audio-hint", card).textContent = extEndpoint ? "Saved endpoint id is selected." : "Empty value follows the current Windows default playback device.";
+  }
+
+  const baseRenderSources = renderSources;
+  renderSources = function() {
+    baseRenderSources();
+    renderExternalAudioCard();
+  };
+})();
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2400);
 };

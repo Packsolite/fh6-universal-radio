@@ -35,6 +35,12 @@ user_id            = ''                # the ID of the user to track playback ag
 default_playlist   = ''                # jellyfin playlist ID goes here
 shuffle            = true              # true or false
 
+
+[external_audio]
+# Empty = default Windows playback device. Otherwise use full endpoint id or part of device name, e.g. 'CABLE Input'.
+# This section is read directly by ExternalAudioSource.
+endpoint_id = ''
+
 [audio]
 output_gain = 1.0
 

@@ -6,6 +6,7 @@
 #include "fh6/sources/local_file_source.hpp"
 #include "fh6/sources/youtube_music_source.hpp"
 #include "fh6/sources/jellyfin_source.hpp"
+#include "fh6/sources/external_audio_source.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -455,7 +456,7 @@ struct HttpServer::Impl {
         Request req;
         if (!read_request(client, req)) return;
 
-        auto ok = [&](const json& j = json::object()) {
+        auto ok = [&](json j = {}) {
             std::string body = j.empty()
                                    ? std::string{R"({"ok":true})"}
                                    : j.dump(-1, ' ', false, json::error_handler_t::replace);
@@ -507,6 +508,26 @@ struct HttpServer::Impl {
             const bool was_active = (mgr.active() == yt);
             yt->set_target(std::move(url));
             yt->stop();
+    if (m == "GET" && p == "/api/external_audio/devices") {
+      json devices = json::array();
+      for (const auto& d : sources::enumerate_external_audio_devices()) {
+        devices.push_back(json{{"id", d.id}, {"name", d.name}, {"is_default", d.is_default}});
+      }
+      return ok(json{{"endpoint_id", sources::external_audio_configured_endpoint()}, {"devices", devices}});
+    }
+
+    if (m == "PUT" && p == "/api/external_audio/config") {
+      auto body = req.body.empty() ? json{} : json::parse(req.body);
+      const auto endpoint = body.value("endpoint_id", std::string{});
+      if (!sources::set_external_audio_configured_endpoint(endpoint)) {
+        return fail(500, "failed to save external_audio config");
+      }
+      if (auto* ext = find_typed<sources::ExternalAudioSource>("external_audio")) {
+        ext->reload_from_config();
+      }
+      return ok(json{{"endpoint_id", sources::external_audio_configured_endpoint()}});
+    }
+
             if (was_active) mgr.ring().drain();
             yt->play();
             mgr.switch_to("youtube_music");
