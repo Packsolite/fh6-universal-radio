@@ -44,14 +44,17 @@ using WinHttpHandle = std::unique_ptr<void, WinHttpDeleter>;
 
 bool config_complete(const JellyfinConfig& c) noexcept {
     return !c.server_url.empty() && !c.api_key.empty() &&
-           !c.user_id.empty() && !c.default_playlist.empty();
+           !c.user_id.empty() && (!c.default_playlist.empty() || c.use_favorites);
 }
 
 // Fields that determine which playlist gets fetched. `shuffle` deliberately
 // omitted -- it doesn't require a re-query.
 bool same_query_target(const JellyfinConfig& a, const JellyfinConfig& b) noexcept {
-    return a.server_url == b.server_url && a.api_key == b.api_key &&
-           a.user_id    == b.user_id    && a.default_playlist == b.default_playlist;
+    if (a.server_url != b.server_url || a.api_key != b.api_key ||
+        a.user_id != b.user_id || a.use_favorites != b.use_favorites) return false;
+    // default_playlist is irrelevant when both sides fetch favorites.
+    if (a.use_favorites && b.use_favorites) return true;
+    return a.default_playlist == b.default_playlist;
 }
 
 std::optional<std::string> http_get(const JellyfinConfig& cfg, const std::string& path) {
@@ -124,8 +127,12 @@ std::optional<std::string> http_get(const JellyfinConfig& cfg, const std::string
 }
 
 std::optional<std::vector<JellyfinTrack>> fetch_tracks(const JellyfinConfig& cfg) {
-    const std::string path = std::format(
-        "/Users/{}/Items?ParentId={}&Filters=IsNotFolder", cfg.user_id, cfg.default_playlist);
+    std::string path;
+    if (cfg.use_favorites) {
+        path = std::format("/Users/{}/Items?Filters=IsFavorite&IncludeItemTypes=Audio&Recursive=true", cfg.user_id);
+    } else {
+        path = std::format("/Users/{}/Items?ParentId={}&Filters=IsNotFolder", cfg.user_id, cfg.default_playlist);
+    }
     auto body = http_get(cfg, path);
     if (!body) return std::nullopt;
 
@@ -317,6 +324,7 @@ bool JellyfinSource::cast(std::string playlist_id) {
         snap = cfg_;
     }
     snap.default_playlist = playlist_id;
+    snap.use_favorites    = false;   // cast targets a specific playlist
     if (!config_complete(snap)) return false;
 
     std::optional<std::vector<JellyfinTrack>> tracks;
