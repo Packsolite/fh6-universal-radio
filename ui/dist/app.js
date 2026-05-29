@@ -106,6 +106,10 @@ function renderSources() {
 
   // Cast box only makes sense while Jellyfin is registered.
   $("#jf-cast-card").hidden = !available.some(s => s.name === "jellyfin");
+  
+  // Cast box only makes sense while Online Radio is registered.
+  const orCard = $("#or-cast-card");
+  if (orCard) orCard.hidden = !available.some(s => s.name === "online_radio");
 }
 
 let volDirty = false;
@@ -150,6 +154,11 @@ const SCHEMA = [
     ["use_favorites",    "Use Favorites",    "checkbox"],
     ["shuffle",          "Shuffle",          "checkbox"],
   ]],
+  ["online_radio", "Online Radio", [
+    ["enabled",               "Enabled",               "checkbox"],
+    ["default_station_index", "Default station index", "number", 0, 999, 1],
+    ["stations",              "Stations",              "stations_editor"],
+  ]],
   ["audio", "Audio", [
     ["output_gain", "Output gain", "number", 0, 1, 0.01],
   ]],
@@ -192,6 +201,21 @@ function field(section, [key, label, type, a, b, c]) {
       </div>`).join("");
     return `<div class="field bands"><label>${label}</label>${rows}</div>`;
   }
+  if (type === "stations_editor") {
+    const st = Array.isArray(cur) ? cur : [];
+    const rows = st.map((s, i) => `
+      <div class="station-row">
+        <input type="text" placeholder="Name" value="${(s.name||'').replace(/"/g, '&quot;')}" data-section="${section}" data-key="${key}" data-prop="name" data-idx="${i}">
+        <input type="text" placeholder="URL" value="${(s.url||'').replace(/"/g, '&quot;')}" data-section="${section}" data-key="${key}" data-prop="url" data-idx="${i}">
+        <button type="button" class="ghost del-station" data-idx="${i}" title="Remove">✕</button>
+      </div>
+    `).join("");
+    return `<div class="field stations-editor">
+      <label>${label}</label>
+      <div id="stations-list">${rows}</div>
+      <button type="button" class="ghost" id="add-station" style="align-self: flex-start; margin-top: 4px;">+ Add Station</button>
+    </div>`;
+  }
   const attrs = type === "number"
     ? ` min="${a ?? ''}" max="${b ?? ''}" step="${c ?? 1}"`
     : "";
@@ -211,6 +235,27 @@ function renderSettings() {
     const out = r.nextElementSibling;
     r.addEventListener("input", () => { out.textContent = `${parseFloat(r.value).toFixed(1)} dB`; });
   });
+
+  // handle Online Radio dynamic station inputs
+  const addBtn = $("#add-station", form);
+  if (addBtn) {
+    addBtn.onclick = () => {
+      const patch = collectSettings();
+      Object.keys(patch).forEach(k => cfg[k] = {...cfg[k], ...patch[k]});
+      cfg.online_radio.stations = cfg.online_radio.stations || [];
+      cfg.online_radio.stations.push({name: "", url: ""});
+      renderSettings();
+    };
+  }
+  $$(".del-station", form).forEach(btn => {
+    btn.onclick = () => {
+      const patch = collectSettings();
+      Object.keys(patch).forEach(k => cfg[k] = {...cfg[k], ...patch[k]});
+      const idx = parseInt(btn.dataset.idx, 10);
+      cfg.online_radio.stations.splice(idx, 1);
+      renderSettings();
+    };
+  });
 }
 
 function collectSettings() {
@@ -219,6 +264,16 @@ function collectSettings() {
     const sec = el.dataset.section;
     const key = el.dataset.key;
     (patch[sec] ??= {});
+
+    // parse station objects
+    if (el.dataset.idx !== undefined) {
+      const arr = (patch[sec][key] ??= []);
+      const idx = parseInt(el.dataset.idx, 10);
+      arr[idx] = arr[idx] || {};
+      arr[idx][el.dataset.prop] = el.value;
+      return;
+    }
+
     if (el.dataset.index !== undefined) {
       const arr = (patch[sec][key] ??= []);
       arr[parseInt(el.dataset.index, 10)] = parseFloat(el.value);
@@ -302,6 +357,20 @@ function wire() {
       toast("Playing playlist...");
     } catch (err) { toast(err.message, true); }
   });
+
+  const orCast = $("#or-cast");
+  if (orCast) {
+    orCast.addEventListener("submit", async e => {
+      e.preventDefault();
+      const url = $("#or-url").value.trim();
+      if (!url) return;
+      try {
+        await api.send("/api/source/online_radio/cast", { url });
+        $("#or-url").value = "";
+        toast("Casting stream...");
+      } catch (err) { toast(err.message, true); }
+    });
+  }
 
   $("#open-settings").onclick  = async () => { cfg = await api.get("/api/config"); renderSettings(); openDrawer(); };
   $("#close-settings").onclick = closeDrawer;
