@@ -105,8 +105,8 @@ void OnlineRadioSource::start_pipe_locked() {
 
     const auto ff = ffmpeg_path_.empty() ? L"ffmpeg" : ffmpeg_path_.wstring();
 
-    // use -loglevel info and -icy 1 so ffmpeg emits "ICY Info: StreamTitle='...'"
-    std::wstring ff_cmd = quote(ff) + L" -hide_banner -loglevel info -icy 1 "
+    // use -loglevel verbose and -icy 1 so ffmpeg emits "ICY Info: StreamTitle='...'"
+    std::wstring ff_cmd = quote(ff) + L" -hide_banner -loglevel verbose -icy 1 "
                           L"-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
                           L"-i " + quote(widen(play_url)) + L" "
                           L"-f s16le -acodec pcm_s16le -ar 48000 -ac 2 ";
@@ -231,14 +231,18 @@ void OnlineRadioSource::pump(RingBuffer& ring) {
         
         // process line by line
         size_t newline_pos;
-        while ((newline_pos = p->stderr_buf.find('\n')) != std::string::npos) {
+        while ((newline_pos = p->stderr_buf.find_first_of("\r\n")) != std::string::npos) {
             std::string line = p->stderr_buf.substr(0, newline_pos);
-            p->stderr_buf.erase(0, newline_pos + 1);
-            
-            // clean up carriage return
-            if (!line.empty() && line.back() == '\r') {
-                line.pop_back();
+            // if it's a \r\n sequence, erase both to avoid empty lines
+            size_t erase_len = 1;
+            if (p->stderr_buf[newline_pos] == '\r' && 
+                newline_pos + 1 < p->stderr_buf.size() && 
+                p->stderr_buf[newline_pos + 1] == '\n') {
+                erase_len = 2;
             }
+            p->stderr_buf.erase(0, newline_pos + erase_len);
+            
+            if (line.empty()) continue;
 
             std::string payload = line;
             // strip FFmpeg log prefix
@@ -267,15 +271,21 @@ void OnlineRadioSource::pump(RingBuffer& ring) {
                 raw_val = clean_value(raw_val);
                 
                 if (!raw_val.empty()) {
+                    std::string new_artist, new_title;
                     auto dash = raw_val.find(" - ");
                     if (dash != std::string::npos && dash > 0) {
-                        current_artist_ = raw_val.substr(0, dash);
-                        current_title_ = raw_val.substr(dash + 3);
+                        new_artist = raw_val.substr(0, dash);
+                        new_title = raw_val.substr(dash + 3);
                     } else {
-                        current_artist_.clear();
-                        current_title_ = raw_val;
+                        new_title = raw_val;
                     }
-                    log::info("[online_radio] Metadata Update (ICY): {} - {}", current_artist_, current_title_);
+                    
+                    // only update and log if the track actually changed
+                    if (current_artist_ != new_artist || current_title_ != new_title) {
+                        current_artist_ = new_artist;
+                        current_title_ = new_title;
+                        log::info("[online_radio] Metadata Update (ICY): {} - {}", current_artist_, current_title_);
+                    }
                 }
                 continue;
             }
@@ -296,31 +306,37 @@ void OnlineRadioSource::pump(RingBuffer& ring) {
                     if (raw_val.empty()) continue;
 
                     bool updated = false;
-                    if (key == "streamtitle" || key == "icy-name") {
+                    std::string new_artist = current_artist_;
+                    std::string new_title = current_title_;
+
+                    if (key.find("streamtitle") != std::string::npos || key.find("icy-name") != std::string::npos) {
                         auto dash = raw_val.find(" - ");
                         if (dash != std::string::npos && dash > 0) {
-                            current_artist_ = raw_val.substr(0, dash);
-                            current_title_ = raw_val.substr(dash + 3);
+                            new_artist = raw_val.substr(0, dash);
+                            new_title = raw_val.substr(dash + 3);
                         } else {
-                            current_artist_.clear();
-                            current_title_ = raw_val;
+                            new_artist.clear();
+                            new_title = raw_val;
                         }
                         updated = true;
                     } else if (key == "title" || key == "tit2") {
                         auto dash = raw_val.find(" - ");
                         if (dash != std::string::npos && dash > 0) {
-                            current_artist_ = raw_val.substr(0, dash);
-                            current_title_ = raw_val.substr(dash + 3);
+                            new_artist = raw_val.substr(0, dash);
+                            new_title = raw_val.substr(dash + 3);
                         } else {
-                            current_title_ = raw_val; // for ID3 streams, don't clear the artist tag if one was found
+                            new_title = raw_val; // for ID3 streams, don't clear the artist tag if one was found
                         }
                         updated = true;
                     } else if (key == "artist" || key == "tpe1") {
-                        current_artist_ = raw_val;
+                        new_artist = raw_val;
                         updated = true;
                     }
 
-                    if (updated) {
+                    // only apply changes and log if the extracted tag is a new song
+                    if (updated && (current_artist_ != new_artist || current_title_ != new_title)) {
+                        current_artist_ = new_artist;
+                        current_title_ = new_title;
                         log::info("[online_radio] Metadata Update (Tag): {} - {}", current_artist_, current_title_);
                     }
                 }
