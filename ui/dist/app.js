@@ -246,17 +246,11 @@ function renderExternalAudioCard() {
   }
 
   const active = state?.sources?.active === "external_audio";
-  const selected = extEndpoint
-    ? extDevices.find(d => d.id === extEndpoint)?.name || "saved endpoint"
-    : "current Windows default playback device";
-  const session = extMediaSessionId
-    ? extMediaSessions.find(s => s.id === extMediaSessionId)?.name || "saved media session"
-    : "current Windows media session";
   $("#external-audio-hint", card).textContent = !available
-    ? `External Audio is enabled in settings, but the source is not registered yet. Capture: ${selected}. Media session: ${session}.`
+    ? "Enabled, but the source hasn't registered yet."
     : active
-      ? `External Audio is active. Capturing: ${selected}. Metadata/control: ${session}.`
-      : `External Audio is available. Capture: ${selected}. Metadata/control: ${session}.`;
+      ? "Active and on air."
+      : "Ready. Switch to External Audio in Sources to go on air.";
 }
 
 let volDirty = false;

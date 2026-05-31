@@ -24,5 +24,7 @@ std::optional<TrackInfo> external_audio_media_session_track(std::string_view sel
                                                             uint64_t fallback_position_ms = 0);
 bool external_audio_media_session_next(std::string_view selected_id);
 bool external_audio_media_session_previous(std::string_view selected_id);
+bool external_audio_media_session_pause(std::string_view selected_id);
+bool external_audio_media_session_play(std::string_view selected_id);
 
 } // namespace fh6::sources

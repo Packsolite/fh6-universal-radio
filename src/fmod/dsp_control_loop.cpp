@@ -20,6 +20,11 @@ constexpr int kDiscoveryTries  = 120; // 10-minute budget; the radio system
 // before we conclude the game tore the radio channel down. 1s @ 20ms.
 constexpr int kStaleTickThreshold = 50;
 
+// Shorter freeze, ~160 ms @ 20ms, before we treat the station as silenced
+// (pause menu, radio off) and tell the active source so it can mirror the
+// state onto any live external player it wraps.
+constexpr int kInaudibleTicks = 8;
+
 // Minimum gap between two off/on station toggles. The toggle blocks ~300ms
 // and the game needs a moment to reallocate the channel, so we leave it well
 // alone in between rather than thrashing the radio.
@@ -109,6 +114,20 @@ void ControlLoop::run(const std::stop_token& tok) {
             }
         } else {
             stale_ticks_ = 0;
+        }
+
+        // Audibility edge: while a source is producing, no read_callback
+        // progress means the game silenced our station. Report the transition
+        // so sources wrapping a live player (External Audio) pause/resume it.
+        if (active && busy) {
+            idle_ticks_        = (c == prev_calls_) ? idle_ticks_ + 1 : 0;
+            const bool audible = idle_ticks_ < kInaudibleTicks;
+            if (audible != radio_audible_) {
+                radio_audible_ = audible;
+                active->on_radio_audible(audible);
+            }
+        } else {
+            idle_ticks_ = 0;
         }
 
         run_playback_state_machines(std::chrono::steady_clock::now());

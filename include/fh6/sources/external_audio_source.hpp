@@ -39,6 +39,7 @@ public:
  void previous() override;
  bool skip_next() override;
  void pump(RingBuffer& ring) override;
+ void on_radio_audible(bool audible) override;
  void set_config(ExternalAudioConfig cfg);
 
  TrackInfo current_track() const override;
@@ -60,6 +61,7 @@ private:
 
  std::string configured_endpoint() const;
  std::string configured_media_session() const;
+ void set_media_transport(bool play);
 
  mutable std::mutex meta_mu_;
  std::string device_name_ = "Default playback device";
@@ -77,6 +79,7 @@ private:
 
  std::atomic<PlaybackState> state_{PlaybackState::stopped};
  std::atomic<uint64_t> position_ms_{0};
+ std::atomic<bool> media_active_{false};
 };
 
 } // namespace fh6::sources

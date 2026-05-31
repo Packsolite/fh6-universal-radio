@@ -509,27 +509,39 @@ void ExternalAudioSource::shutdown() noexcept {
 }
 
 void ExternalAudioSource::play() {
- // Source lifecycle only: selecting or resuming External Audio must not
- // send Play to the user's external media application. Metadata and explicit
- // next/previous actions are handled through the selected media session, but
- // play/pause here only control whether this source feeds captured PCM to FH6.
  state_.store(PlaybackState::playing, std::memory_order_release);
  start_worker();
+ set_media_transport(true);
 }
 
 void ExternalAudioSource::pause() {
- // Source lifecycle only: do not pause the selected Windows media session when
- // the user switches away from External Audio or the source manager pauses us.
  state_.store(PlaybackState::paused, std::memory_order_release);
+ set_media_transport(false);
  stop_worker();
  clear_queue();
 }
 
 void ExternalAudioSource::stop() {
  state_.store(PlaybackState::stopped, std::memory_order_release);
+ set_media_transport(false);
  stop_worker();
  clear_queue();
  position_ms_.store(0, std::memory_order_release);
+}
+
+// The game drains our station only while it's audible; when it stops (pause
+// menu, radio off) the control loop reports it here so the live external player
+// pauses in step instead of running on, then resumes when audio flows again.
+void ExternalAudioSource::on_radio_audible(bool audible) {
+ if (state_.load(std::memory_order_acquire) != PlaybackState::playing) return;
+ set_media_transport(audible);
+}
+
+void ExternalAudioSource::set_media_transport(bool play) {
+ if (media_active_.exchange(play) == play) return;
+ const auto session = configured_media_session();
+ if (play) external_audio_media_session_play(session);
+ else      external_audio_media_session_pause(session);
 }
 
 void ExternalAudioSource::next() {

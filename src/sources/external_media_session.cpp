@@ -110,6 +110,20 @@ TrackInfo track_from_session(media::GlobalSystemMediaTransportControlsSession co
     return info;
 }
 
+// Run a transport command against the selected (or current) session. Returns
+// false when nothing matches or the call throws.
+template <class Fn>
+bool with_session(std::string_view selected_id, Fn&& fn) {
+    try {
+        RoApartment apartment;
+        auto manager = session_manager();
+        auto session = pick_session(manager, selected_id);
+        return session ? fn(*session) : false;
+    } catch (...) {
+        return false;
+    }
+}
+
 #endif
 
 } // namespace
@@ -178,12 +192,7 @@ std::optional<TrackInfo> external_audio_media_session_track(std::string_view sel
 
 bool external_audio_media_session_next(std::string_view selected_id) {
 #if FH6_EXTERNAL_AUDIO_HAS_CPPWINRT
-    try {
-        RoApartment apartment;
-        auto manager = session_manager();
-        auto session = pick_session(manager, selected_id);
-        return session ? session->TrySkipNextAsync().get() : false;
-    } catch (...) { return false; }
+    return with_session(selected_id, [](auto& s) { return s.TrySkipNextAsync().get(); });
 #else
     (void)selected_id;
     return false;
@@ -192,17 +201,29 @@ bool external_audio_media_session_next(std::string_view selected_id) {
 
 bool external_audio_media_session_previous(std::string_view selected_id) {
 #if FH6_EXTERNAL_AUDIO_HAS_CPPWINRT
-    try {
-        RoApartment apartment;
-        auto manager = session_manager();
-        auto session = pick_session(manager, selected_id);
-        return session ? session->TrySkipPreviousAsync().get() : false;
-    } catch (...) { return false; }
+    return with_session(selected_id, [](auto& s) { return s.TrySkipPreviousAsync().get(); });
 #else
     (void)selected_id;
     return false;
 #endif
 }
 
+bool external_audio_media_session_pause(std::string_view selected_id) {
+#if FH6_EXTERNAL_AUDIO_HAS_CPPWINRT
+    return with_session(selected_id, [](auto& s) { return s.TryPauseAsync().get(); });
+#else
+    (void)selected_id;
+    return false;
+#endif
+}
+
+bool external_audio_media_session_play(std::string_view selected_id) {
+#if FH6_EXTERNAL_AUDIO_HAS_CPPWINRT
+    return with_session(selected_id, [](auto& s) { return s.TryPlayAsync().get(); });
+#else
+    (void)selected_id;
+    return false;
+#endif
+}
 
 } // namespace fh6::sources
