@@ -220,7 +220,7 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     // loading screens; the 5 s race-restart window stays separate from the
     // 45 s race-start floor so a quick restart-then-engage still dispatches.
     constexpr auto kQuickSkipWindow     = 1000ms;
-    constexpr auto kSpircCooldown       = 1500ms;
+    constexpr auto kSkipCommandCooldown = 1500ms;
     constexpr auto kRaceStartDebounce   = 45s;
     constexpr auto kRaceRestartDebounce = 5s;
 
@@ -251,7 +251,7 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     const bool race_event      = (race_edge_in || restart_edge_in) && r10;
     const auto race_debounce   = restart_edge_in ? kRaceRestartDebounce : kRaceStartDebounce;
     if (race_event && now - last_race_event_ >= race_debounce &&
-        now - last_skip_cmd_ >= kSpircCooldown) {
+        now - last_skip_cmd_ >= kSkipCommandCooldown) {
         const auto& mode    = opts->race_start_playback;
         const char* outcome = "keeping current position";
         bool fired          = false;
@@ -278,7 +278,7 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
         if (opts->quick_station_skip) quick_skip_armed_ = true;
     } else if (!prev_r10_ && r10) {
         if (quick_skip_armed_ && now - last_r10_off_ <= kQuickSkipWindow &&
-            now - last_skip_cmd_ >= kSpircCooldown) {
+            now - last_skip_cmd_ >= kSkipCommandCooldown) {
             if (active->skip_next()) {
                 ring.drain();
                 last_skip_cmd_ = now;
