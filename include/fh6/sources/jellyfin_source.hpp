@@ -20,6 +20,7 @@ struct JellyfinTrack {
     std::string title;
     std::string artist;
     std::string album;
+    std::string image_tag;   // ImageTags.Primary; empty when the item has no cover
     std::uint64_t duration_ms = 0;
 };
 

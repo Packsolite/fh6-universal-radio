@@ -610,6 +610,23 @@ TrackInfo ExternalAudioSource::current_track() const {
  const auto selected_session = configured_media_session();
  if (auto t = external_audio_media_session_track(selected_session, fallback_position)) {
   if (t->album.empty()) t->album = "External Audio";
+
+  const std::string key = t->title + '\x1f' + t->artist;
+  bool need_fetch;
+  {
+   std::scoped_lock lk{meta_mu_};
+   need_fetch = (key != art_key_);
+  }
+  std::optional<ArtworkImage> fetched;
+  if (need_fetch) fetched = external_audio_media_session_thumbnail(selected_session);
+
+  std::scoped_lock lk{meta_mu_};
+  if (need_fetch) {
+   art_key_ = key;
+   art_ = fetched ? std::move(*fetched) : ArtworkImage{};
+  }
+  if (!art_.bytes.empty())
+   t->artwork_url = "/api/artwork?v=" + std::to_string(std::hash<std::string>{}(key));
   return *t;
  }
 
@@ -620,6 +637,12 @@ TrackInfo ExternalAudioSource::current_track() const {
  t.album = "External Audio";
  t.position_ms = fallback_position;
  return t;
+}
+
+std::optional<ArtworkImage> ExternalAudioSource::artwork() const {
+ std::scoped_lock lk{meta_mu_};
+ if (!art_.bytes.empty()) return art_;
+ return std::nullopt;
 }
 
 AuthState ExternalAudioSource::auth_state() const noexcept {

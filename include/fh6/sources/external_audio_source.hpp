@@ -43,6 +43,7 @@ public:
  void set_config(ExternalAudioConfig cfg);
 
  TrackInfo current_track() const override;
+ std::optional<ArtworkImage> artwork() const override;
  PlaybackState playback_state() const noexcept override {
   return state_.load(std::memory_order_acquire);
  }
@@ -68,6 +69,9 @@ private:
  std::string last_error_;
  std::string endpoint_id_;
  std::string media_session_id_;
+ // SMTC thumbnail cache, refreshed only when the track identity changes.
+ mutable std::string art_key_;
+ mutable ArtworkImage art_;
 
  std::mutex queue_mu_;
  std::vector<int16_t> pcm_queue_;

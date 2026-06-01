@@ -1,13 +1,18 @@
 #include "fh6/sources/spotify_source.hpp"
 #include "fh6/sources/external_media_session.hpp"
 #include "fh6/log.hpp"
+#include "fh6/net/http_get.hpp"
+
+#include <nlohmann/json.hpp>
 
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <utility>
 
 namespace fh6::sources {
 
@@ -33,6 +38,24 @@ void send_media_key(WORD vk) {
     ip[0].ki.dwFlags = KEYEVENTF_EXTENDEDKEY;
     ip[1].ki.dwFlags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
     SendInput(2, ip, sizeof(INPUT));
+}
+
+std::string spotify_uri_to_url(std::string uri) {
+    if (uri.rfind("spotify:", 0) == 0) uri.erase(0, 8);
+    std::replace(uri.begin(), uri.end(), ':', '/');
+    return "https://open.spotify.com/" + uri;   // spotify:track:ID -> .../track/ID
+}
+
+// Resolve a track's cover via Spotify's public oEmbed endpoint (no auth).
+std::optional<std::string> resolve_cover(const std::string& uri) {
+    auto body = net::http_get("https://open.spotify.com/oembed?url=" + spotify_uri_to_url(uri));
+    if (!body) return std::nullopt;
+    try {
+        const auto j = nlohmann::json::parse(*body);
+        if (auto it = j.find("thumbnail_url"); it != j.end() && it->is_string())
+            return it->get<std::string>();
+    } catch (...) {}
+    return std::nullopt;
 }
 
 // CreateProcess hands one string to the child via GetCommandLineW
@@ -127,6 +150,8 @@ struct SpotifySource::Pipe {
     uint64_t bytes_consumed = 0;
 
     // gapless & prefetch tracking
+    std::string loading_uri;   // Spotify URI from the most recent "Loading <...>" line
+    std::string pending_uri;   // URI paired with pending_title
     std::string pending_title;
     uint64_t pending_duration_ms = 0;
     uint64_t track_duration_ms = 0;
@@ -151,6 +176,7 @@ SpotifySource::SpotifySource(SpotifyConfig cfg, std::filesystem::path ffmpeg_pat
 }
 
 SpotifySource::~SpotifySource() {
+    stop_art_worker();
     std::scoped_lock lk{mu_};
     stop_pipe_locked();
 }
@@ -167,7 +193,50 @@ bool SpotifySource::initialize() {
                   ec.message());
         return false;
     }
+    start_art_worker();
     return true;
+}
+
+void SpotifySource::start_art_worker() {
+    if (art_thr_.joinable()) return;
+    art_stop_ = false;
+    art_thr_ = std::thread{[this] { artwork_worker(); }};
+}
+
+void SpotifySource::stop_art_worker() noexcept {
+    {
+        std::scoped_lock lk{art_mu_};
+        art_stop_ = true;
+    }
+    art_cv_.notify_all();
+    if (art_thr_.joinable()) art_thr_.join();
+}
+
+void SpotifySource::request_artwork_locked(const std::string& uri) {
+    info_.artwork_url.clear();
+    info_uri_ = uri;
+    if (uri.empty()) return;
+    {
+        std::scoped_lock lk{art_mu_};
+        art_req_uri_ = uri;
+    }
+    art_cv_.notify_one();
+}
+
+void SpotifySource::artwork_worker() {
+    for (;;) {
+        std::string uri;
+        {
+            std::unique_lock lk{art_mu_};
+            art_cv_.wait(lk, [this] { return art_stop_ || !art_req_uri_.empty(); });
+            if (art_stop_) return;
+            uri = std::exchange(art_req_uri_, {});
+        }
+        auto url = resolve_cover(uri);   // network, no locks held
+        if (!url) continue;
+        std::scoped_lock lk{mu_};
+        if (info_uri_ == uri) info_.artwork_url = std::move(*url);
+    }
 }
 
 void SpotifySource::set_config(SpotifyConfig cfg, std::filesystem::path ffmpeg_path) {
@@ -310,6 +379,8 @@ void SpotifySource::start_pipe_locked() {
 
     info_.title = "Streaming via Spotify Connect";
     info_.artist = "Spotify";
+    info_.artwork_url.clear();
+    info_uri_.clear();
     state_.store(PlaybackState::playing, std::memory_order_release);
 
     log::info("[spotify] librespot pipe started (listening on network)");
@@ -397,9 +468,16 @@ void SpotifySource::pump(RingBuffer& ring) {
                 // strip Windows carriage return if it exists
                 if (!line.empty() && line.back() == '\r') line.pop_back();
 
-                // ignore the pre-fetch loading event
-                if (line.find("] Loading <") != std::string::npos) {
-                    continue; 
+                // Capture the URI from the "Loading <..>" line preceding each
+                // track's "loaded" line, to resolve its cover.
+                if (auto lp = line.find("] Loading <"); lp != std::string::npos) {
+                    const std::string mk = "Spotify URI <";
+                    if (auto up = line.find(mk, lp); up != std::string::npos) {
+                        const size_t s = up + mk.size();
+                        const size_t e = line.find('>', s);
+                        if (e != std::string::npos) p->loading_uri = line.substr(s, e - s);
+                    }
+                    continue;
                 }
 
                 // catch seek events from librespot to sync UI timer on scrub
@@ -453,10 +531,12 @@ void SpotifySource::pump(RingBuffer& ring) {
                             p->force_next_metadata = false;
                             p->has_pending = false;
                             p->stall_ticks = 0;
+                            request_artwork_locked(p->loading_uri);
                         } else {
                             // queue it for the gapless transition
                             p->pending_title = parsed_title;
                             p->pending_duration_ms = parsed_duration;
+                            p->pending_uri = p->loading_uri;
                             p->has_pending = true;
                         }
                     }
@@ -484,10 +564,11 @@ void SpotifySource::pump(RingBuffer& ring) {
                 info_.title = p->pending_title;
                 info_.duration_ms = p->pending_duration_ms;
                 p->track_duration_ms = p->pending_duration_ms;
-                
+
                 p->bytes_consumed = 0;
                 p->has_pending = false;
-            } 
+                request_artwork_locked(p->pending_uri);
+            }
             // catch-all for extreme network lag / dead stream (stall for > 800ms)
             else if (p->stall_ticks > 50) {
                 p->force_next_metadata = true;
@@ -509,6 +590,7 @@ void SpotifySource::pump(RingBuffer& ring) {
             p->bytes_consumed -= track_bytes;
             p->has_pending = false;
             p->stall_ticks = 0;
+            request_artwork_locked(p->pending_uri);
         }
     }
 

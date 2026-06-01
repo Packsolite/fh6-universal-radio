@@ -3,6 +3,7 @@
 #include "fh6/ring_buffer.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace fh6 {
@@ -16,6 +17,13 @@ struct TrackInfo {
     std::string artwork_url;
     uint64_t duration_ms = 0;
     uint64_t position_ms = 0;
+};
+
+// Local cover bytes (embedded tag, OS thumbnail) served at GET /api/artwork
+// when the art isn't a browser-reachable URL.
+struct ArtworkImage {
+    std::string mime;
+    std::string bytes;
 };
 
 enum class PlaybackState { stopped, playing, paused, buffering };
@@ -68,6 +76,10 @@ public:
     virtual void on_radio_audible(bool /*audible*/) {}
 
     virtual TrackInfo current_track() const               = 0;
+
+    // Local cover bytes for the current track; empty for URL-based sources.
+    virtual std::optional<ArtworkImage> artwork() const { return std::nullopt; }
+
     virtual PlaybackState playback_state() const noexcept = 0;
     virtual AuthState auth_state() const noexcept         = 0;
     virtual std::string auth_instructions() const { return {}; }

@@ -1,17 +1,16 @@
 #include "fh6/sources/jellyfin_source.hpp"
 #include "fh6/log.hpp"
+#include "fh6/net/http_get.hpp"
 #include "fh6/subprocess.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <windows.h>
-#include <winhttp.h>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <format>
-#include <memory>
 #include <optional>
 #include <random>
 #include <string>
@@ -32,15 +31,6 @@ using subprocess::widen;
 
 // PCM contract written by ffmpeg: 48000 Hz * 2 ch * 2 bytes.
 constexpr std::uint64_t kPcmBytesPerSec = 48000ull * 2ull * 2ull;
-
-// 5 s ceilings on every WinHTTP phase so an unreachable server cannot stall
-// the bridge thread (or a settings PATCH handler) for the default 60 seconds.
-constexpr int kHttpTimeoutMs = 5000;
-
-struct WinHttpDeleter {
-    void operator()(void* h) const noexcept { if (h) WinHttpCloseHandle(h); }
-};
-using WinHttpHandle = std::unique_ptr<void, WinHttpDeleter>;
 
 bool config_complete(const JellyfinConfig& c) noexcept {
     return !c.server_url.empty() && !c.api_key.empty() &&
@@ -64,66 +54,8 @@ std::optional<std::string> http_get(const JellyfinConfig& cfg, const std::string
         log::error("[jellyfin] api_key contains invalid characters");
         return std::nullopt;
     }
-
-    URL_COMPONENTS comp{};
-    comp.dwStructSize     = sizeof(comp);
-    comp.dwHostNameLength = (DWORD)-1;
-    const std::wstring url = widen(cfg.server_url);
-    if (!WinHttpCrackUrl(url.c_str(), 0, 0, &comp) || !comp.lpszHostName) {
-        log::error("[jellyfin] invalid server_url '{}' -- expected http:// or https://",
-                   cfg.server_url);
-        return std::nullopt;
-    }
-    const std::wstring host(comp.lpszHostName, comp.dwHostNameLength);
-
-    WinHttpHandle session{WinHttpOpen(L"FH6 Universal Radio/1.0",
-                                       WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-                                       WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0)};
-    if (!session) return std::nullopt;
-    WinHttpSetTimeouts(session.get(), kHttpTimeoutMs, kHttpTimeoutMs,
-                       kHttpTimeoutMs, kHttpTimeoutMs);
-
-    WinHttpHandle conn{WinHttpConnect(session.get(), host.c_str(), comp.nPort, 0)};
-    if (!conn) return std::nullopt;
-
-    WinHttpHandle req{WinHttpOpenRequest(conn.get(), L"GET", widen(path).c_str(), nullptr,
-                                          WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                          comp.nScheme == INTERNET_SCHEME_HTTPS
-                                              ? WINHTTP_FLAG_SECURE : 0)};
-    if (!req) return std::nullopt;
-
-    const std::wstring auth = widen(std::format(
-        "Authorization: MediaBrowser Token=\"{}\"", cfg.api_key));
-    WinHttpAddRequestHeaders(req.get(), auth.c_str(), (ULONG)-1L, WINHTTP_ADDREQ_FLAG_ADD);
-
-    if (!WinHttpSendRequest(req.get(), WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
-        !WinHttpReceiveResponse(req.get(), nullptr)) {
-        log::error("[jellyfin] HTTP send/receive failed (err {})", GetLastError());
-        return std::nullopt;
-    }
-
-    DWORD status = 0, status_sz = sizeof(status);
-    WinHttpQueryHeaders(req.get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                        WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_sz, WINHTTP_NO_HEADER_INDEX);
-
-    std::string body;
-    for (;;) {
-        DWORD avail = 0;
-        if (!WinHttpQueryDataAvailable(req.get(), &avail) || avail == 0) break;
-        const std::size_t off = body.size();
-        body.resize(off + avail);
-        DWORD got = 0;
-        if (!WinHttpReadData(req.get(), body.data() + off, avail, &got)) break;
-        body.resize(off + got);
-        if (got == 0) break;
-    }
-
-    if (status != 200) {
-        log::error("[jellyfin] HTTP {} from server: {}", status, body);
-        return std::nullopt;
-    }
-    return body;
+    const auto auth = std::format("Authorization: MediaBrowser Token=\"{}\"", cfg.api_key);
+    return net::http_get(cfg.server_url + path, auth);
 }
 
 std::optional<std::vector<JellyfinTrack>> fetch_tracks(const JellyfinConfig& cfg) {
@@ -157,6 +89,9 @@ std::optional<std::vector<JellyfinTrack>> fetch_tracks(const JellyfinConfig& cfg
                      && ar->front().is_string())
                 t.artist = ar->front().get<std::string>();
             t.album = item.value("Album", "");
+            if (auto it = item.find("ImageTags");
+                it != item.end() && it->is_object() && it->contains("Primary"))
+                t.image_tag = it->value("Primary", "");
             if (auto r = item.find("RunTimeTicks");
                 r != item.end() && r->is_number_unsigned())
                 t.duration_ms = r->get<std::uint64_t>() / 10'000u;  // 10000 ticks = 1 ms
@@ -455,6 +390,10 @@ TrackInfo JellyfinSource::current_track() const {
     info.artist      = t.artist;
     info.album       = t.album;
     info.duration_ms = t.duration_ms;
+    // Public image endpoint; the tag scopes caching and proves a cover exists.
+    if (!t.image_tag.empty() && !cfg_.server_url.empty())
+        info.artwork_url = std::format("{}/Items/{}/Images/Primary?tag={}&fillWidth=480&quality=90",
+                                       cfg_.server_url, t.id, t.image_tag);
     if (pipe_) info.position_ms = pipe_->position_ms.load(std::memory_order_acquire);
     return info;
 }

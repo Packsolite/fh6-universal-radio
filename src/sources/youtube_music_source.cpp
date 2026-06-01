@@ -295,7 +295,8 @@ YouTubeMusicSource::spawn_pipe_locked(std::string_view url, std::size_t for_idx)
                                       L"--encoding UTF-8 "
                                       L"--print \"%(title)s\" "
                                       L"--print \"%(uploader)s\" "
-                                      L"--print \"%(duration)s\" ";
+                                      L"--print \"%(duration)s\" "
+                                      L"--print \"%(thumbnail)s\" ";
     if (!cfg_.cookies_path.empty())
         tl_cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
     tl_cmd += L"-- " + quote(widen(play_url));
@@ -536,12 +537,15 @@ void YouTubeMusicSource::drain_title_pipe_locked(Pipe* p) {
     auto title    = take_line();
     auto uploader = take_line();
     auto duration = take_line();
+    auto thumb    = take_line();
     if (!title.empty() && title != "NA") p->info.title = std::move(title);
     if (!uploader.empty() && uploader != "NA") p->info.artist = std::move(uploader);
     try {
         if (!duration.empty() && duration != "NA")
             p->info.duration_ms = static_cast<std::uint64_t>(std::stod(duration) * 1000.0);
     } catch (...) {}
+    // yt-dlp's %(thumbnail)s is a public i.ytimg.com URL the browser loads directly.
+    if (!thumb.empty() && thumb != "NA") p->info.artwork_url = std::move(thumb);
     CloseHandle(p->title_pipe);
     p->title_pipe = nullptr;
 }

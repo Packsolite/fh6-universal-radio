@@ -283,6 +283,8 @@ constexpr std::string_view mime_for(std::string_view path) noexcept {
     if (ends(".svg"))  return "image/svg+xml";
     if (ends(".png"))  return "image/png";
     if (ends(".json")) return "application/json";
+    if (ends(".woff2")) return "font/woff2";
+    if (ends(".woff"))  return "font/woff";
     return "text/plain";
 }
 
@@ -513,6 +515,14 @@ struct HttpServer::Impl {
         if (m == "GET" && p == "/api/state")         return ok(build_state());
         if (m == "GET" && p == "/api/events")        return send_event_snapshot(client);
         if (m == "GET" && p == "/api/sources")       return ok(build_sources());
+        if (m == "GET" && p.starts_with("/api/artwork")) {
+            // ?v=<token> only busts the browser cache; the active source
+            // always serves its current track's art.
+            if (auto* a = mgr.active())
+                if (auto img = a->artwork())
+                    return send_response(client, 200, img->bytes, img->mime);
+            return fail(404, "no artwork");
+        }
         if (m == "GET" && p == "/api/config")        return ok(config_to_json(store.snapshot()));
         if (m == "GET" && p == "/api/deps") {
             json tools = json::array();

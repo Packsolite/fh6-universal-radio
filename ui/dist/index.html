@@ -1,115 +1,139 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FH6 Universal Radio</title>
-<link rel="stylesheet" href="styles.css">
-</head>
-<body>
-<header>
-  <div class="brand">
-    <span class="mark"></span>
-    <div>
-      <h1>FH6 Universal Radio</h1>
-      <span class="subtitle" id="status">connecting...</span>
-    </div>
-  </div>
-  <button class="ghost" id="open-settings" aria-label="Settings">
-    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
-      <path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2-1.6-2-3.4-2.4.9a7.6 7.6 0 0 0-1.7-1L14.9 3h-3.8l-.4 2.9c-.6.3-1.2.6-1.7 1L6.6 6 4.6 9.4 6.6 11a7.5 7.5 0 0 0 0 2l-2 1.6 2 3.4 2.4-.9c.5.4 1.1.7 1.7 1l.4 2.9h3.8l.4-2.9c.6-.3 1.2-.6 1.7-1l2.4.9 2-3.4-2-1.6Zm-7.4 2.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/>
-    </svg>
-  </button>
-</header>
-
-<main>
-  <section class="now-playing card">
-    <div class="art" id="np-art" aria-hidden="true"></div>
-    <div class="meta">
-      <div class="title" id="np-title">Nothing playing</div>
-      <div class="artist" id="np-artist"></div>
-      <div class="progress">
-        <div class="bar"><div class="fill" id="np-fill"></div></div>
-        <div class="times"><span id="np-pos">0:00</span><span id="np-dur">0:00</span></div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>FH6 Universal Radio</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="mark" id="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>FH6 Universal Radio</h1>
+          <span class="status" id="status">connecting&hellip;</span>
+        </div>
       </div>
-    </div>
-    <div class="transport">
-      <button class="icon" id="t-prev" title="Previous">⏮</button>
-      <button class="icon primary" id="t-play" title="Play / pause">▶</button>
-      <button class="icon" id="t-next" title="Next">⏭</button>
-    </div>
-  </section>
+      <button class="icon-btn" id="open-settings" aria-label="Settings"></button>
+    </header>
 
-  <section class="card">
-    <h2>Source</h2>
-    <div class="sources" id="sources"></div>
-  </section>
+    <section class="hero" id="np-art">
+      <div class="hero-backdrop" id="np-backdrop" aria-hidden="true"></div>
+      <div class="hero-inner">
+        <div class="cover" aria-hidden="true"><img id="np-art-img" alt="" /></div>
+        <div class="now-title" id="np-title">Nothing playing</div>
+        <div class="now-artist" id="np-artist"></div>
+        <div class="progress">
+          <div class="bar"><div class="bar-fill" id="np-fill"></div></div>
+          <div class="times"><span id="np-pos">0:00</span><span id="np-dur">0:00</span></div>
+        </div>
+        <div class="transport">
+          <button class="icon-btn" id="t-prev" aria-label="Previous"></button>
+          <button class="icon-btn primary" id="t-play" aria-label="Play"></button>
+          <button class="icon-btn" id="t-next" aria-label="Next"></button>
+        </div>
+      </div>
+    </section>
 
-  <section class="card" id="yt-cast-card" hidden>
-    <h2>Cast to YouTube Music</h2>
-    <p class="muted">Paste any YouTube or YouTube Music URL (single video or playlist). The radio will switch sources and start streaming immediately.</p>
-    <form id="yt-cast" class="row">
-      <input type="text" id="yt-url" placeholder="https://music.youtube.com/playlist?list=..." autocomplete="off">
-      <button type="submit" class="primary">Cast</button>
-      <button type="button" id="yt-shuffle" class="icon" title="Shuffle playlist">🔀</button>
-    </form>
-  </section>
+    <main>
+      <section class="card" id="source-card" hidden>
+        <h2>Source</h2>
+        <div class="sources" id="sources"></div>
+      </section>
 
-  <section class="card" id="jf-cast-card" hidden>
-    <h2>Play Jellyfin Playlist</h2>
-    <p class="muted">Enter a Jellyfin Playlist ID. The radio will switch sources and start streaming immediately.</p>
-    <form id="jf-cast" class="row">
-      <input type="text" id="jf-url" autocomplete="off">
-      <button type="submit" class="primary">Play</button>
-    </form>
-  </section>
+      <section class="card" id="yt-cast-card" hidden>
+        <h2>Cast to YouTube Music</h2>
+        <p class="muted">
+          Paste any YouTube or YouTube Music URL (single video or playlist). The radio switches
+          source and starts streaming immediately.
+        </p>
+        <form id="yt-cast" class="row">
+          <input
+            type="text"
+            id="yt-url"
+            placeholder="https://music.youtube.com/playlist?list=&hellip;"
+            autocomplete="off"
+          />
+          <button type="submit" class="btn filled">Cast</button>
+          <button type="button" id="yt-shuffle" class="icon-btn" aria-label="Shuffle playlist" aria-pressed="false"></button>
+        </form>
+      </section>
 
-  <section class="card">
-    <h2>Output</h2>
-    <label class="slider">
-      <span>Volume</span>
-      <input type="range" id="vol" min="0" max="1" step="0.01">
-      <output id="vol-out">100%</output>
-    </label>
-  </section>
-</main>
+      <section class="card" id="jf-cast-card" hidden>
+        <h2>Play Jellyfin Playlist</h2>
+        <p class="muted">
+          Enter a Jellyfin Playlist ID. The radio switches source and starts streaming immediately.
+        </p>
+        <form id="jf-cast" class="row">
+          <input type="text" id="jf-url" placeholder="Playlist ID" autocomplete="off" />
+          <button type="submit" class="btn filled">Play</button>
+        </form>
+      </section>
 
-<footer class="credits" id="credits">
-  <p class="credit-line">
-    <strong>FH6 Universal Radio</strong> &mdash; an open-source mod by
-    <a href="https://github.com/g0ldyy" target="_blank" rel="noopener noreferrer">g0ldyy</a>
-    and <a href="https://github.com/g0ldyy/fh6-universal-radio/graphs/contributors" target="_blank" rel="noopener noreferrer">contributors</a>.
-    Released under <a href="https://github.com/g0ldyy/fh6-universal-radio/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">GPLv3</a>.
-  </p>
-  <p class="donate-line">
-    If this mod makes your drives better, consider supporting development:
-  </p>
-  <div class="donate-links">
-    <a class="donate-btn sponsors" href="https://github.com/sponsors/g0ldyy" target="_blank" rel="noopener noreferrer">
-      <span aria-hidden="true">&hearts;</span> GitHub Sponsors
-    </a>
-    <a class="donate-btn kofi" href="https://ko-fi.com/g0ldyy" target="_blank" rel="noopener noreferrer">
-      <span aria-hidden="true">&#9749;</span> Ko-fi
-    </a>
-    <a class="donate-btn repo" href="https://github.com/g0ldyy/fh6-universal-radio" target="_blank" rel="noopener noreferrer">
-      <span aria-hidden="true">&#9733;</span> Star the repo
-    </a>
-  </div>
-</footer>
+      <section class="card" id="output-card" hidden>
+        <h2>Output</h2>
+        <label class="slider">
+          <span>Volume</span>
+          <input type="range" id="vol" min="0" max="1" step="0.01" value="1" />
+          <output id="vol-out">100%</output>
+        </label>
+      </section>
+    </main>
 
-<aside class="drawer" id="drawer" aria-hidden="true">
-  <div class="drawer-head">
-    <h2>Settings</h2>
-    <button class="ghost" id="close-settings" aria-label="Close">✕</button>
-  </div>
-  <form id="settings-form" class="drawer-body"></form>
-  <div class="drawer-foot">
-    <button class="ghost" id="reload-config">Reload from disk</button>
-    <button class="primary" id="save-config">Save</button>
-  </div>
-</aside>
-<div class="scrim" id="scrim" hidden></div>
+    <footer class="credits">
+      <p class="credit-line">
+        <strong>FH6 Universal Radio</strong> &mdash; an open-source mod by
+        <a href="https://github.com/g0ldyy" target="_blank" rel="noopener noreferrer">g0ldyy</a>
+        and
+        <a
+          href="https://github.com/g0ldyy/fh6-universal-radio/graphs/contributors"
+          target="_blank"
+          rel="noopener noreferrer"
+          >contributors</a
+        >. Released under
+        <a
+          href="https://github.com/g0ldyy/fh6-universal-radio/blob/main/LICENSE"
+          target="_blank"
+          rel="noopener noreferrer"
+          >GPLv3</a
+        >.
+      </p>
+      <p class="donate-line">If this mod makes your drives better, consider supporting development:</p>
+      <div class="donate-links">
+        <a
+          class="donate-btn"
+          href="https://github.com/sponsors/g0ldyy"
+          target="_blank"
+          rel="noopener noreferrer"
+          ><span aria-hidden="true">&hearts;</span> GitHub Sponsors</a
+        >
+        <a class="donate-btn" href="https://ko-fi.com/g0ldyy" target="_blank" rel="noopener noreferrer"
+          ><span aria-hidden="true">&#9749;</span> Ko-fi</a
+        >
+        <a
+          class="donate-btn"
+          href="https://github.com/g0ldyy/fh6-universal-radio"
+          target="_blank"
+          rel="noopener noreferrer"
+          ><span aria-hidden="true">&#9733;</span> Star the repo</a
+        >
+      </div>
+    </footer>
 
-<script src="app.js" type="module"></script>
-</body>
+    <aside class="drawer" id="drawer" inert aria-label="Settings">
+      <div class="drawer-head">
+        <h2>Settings</h2>
+        <button class="icon-btn" id="close-settings" aria-label="Close settings"></button>
+      </div>
+      <form id="settings-form" class="drawer-body"></form>
+      <div class="drawer-foot">
+        <button class="btn ghost" id="reload-config" type="button">Reload from disk</button>
+        <button class="btn filled" id="save-config" type="button">Save</button>
+      </div>
+    </aside>
+    <div class="scrim" id="scrim" hidden></div>
+
+    <script src="js/main.js" type="module"></script>
+  </body>
 </html>

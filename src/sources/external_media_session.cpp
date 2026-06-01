@@ -9,6 +9,7 @@
 #include <roapi.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Media.Control.h>
+#include <winrt/Windows.Storage.Streams.h>
 #else
 #define FH6_EXTERNAL_AUDIO_HAS_CPPWINRT 0
 #endif
@@ -185,6 +186,43 @@ std::optional<TrackInfo> external_audio_media_session_track(std::string_view sel
 #else
     (void)selected_id;
     (void)fallback_position_ms;
+    return std::nullopt;
+#endif
+}
+
+std::optional<ArtworkImage> external_audio_media_session_thumbnail(std::string_view selected_id) {
+#if FH6_EXTERNAL_AUDIO_HAS_CPPWINRT
+    namespace streams = winrt::Windows::Storage::Streams;
+    try {
+        RoApartment apartment;
+        auto manager = session_manager();
+        auto session = pick_session(manager, selected_id);
+        if (!session) return std::nullopt;
+
+        const auto props = session->TryGetMediaPropertiesAsync().get();
+        const auto ref = props.Thumbnail();
+        if (!ref) return std::nullopt;
+
+        const streams::IRandomAccessStreamWithContentType stream = ref.OpenReadAsync().get();
+        const uint64_t size = stream ? stream.Size() : 0;
+        if (size == 0 || size > (8ull << 20)) return std::nullopt;
+
+        streams::DataReader reader{stream};
+        reader.LoadAsync(static_cast<uint32_t>(size)).get();
+
+        ArtworkImage out;
+        out.bytes.resize(static_cast<std::size_t>(size));
+        reader.ReadBytes(winrt::array_view<uint8_t>(
+            reinterpret_cast<uint8_t*>(out.bytes.data()),
+            reinterpret_cast<uint8_t*>(out.bytes.data()) + out.bytes.size()));
+        out.mime = s(stream.ContentType());
+        if (out.mime.empty()) out.mime = "image/jpeg";
+        return out;
+    } catch (...) {
+        return std::nullopt;
+    }
+#else
+    (void)selected_id;
     return std::nullopt;
 #endif
 }

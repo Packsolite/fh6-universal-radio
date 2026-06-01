@@ -22,4 +22,17 @@ export default [
       "no-console": "off",
     },
   },
+  {
+    files: ["ui/test/**/*.js"],
+    languageOptions: {
+      ecmaVersion: 2023,
+      sourceType: "module",
+      globals: { ...globals.browser, ...globals.node },
+    },
+    rules: {
+      "no-var": "error",
+      "prefer-const": "warn",
+      "eqeqeq": ["error", "smart"],
+    },
+  },
 ];
