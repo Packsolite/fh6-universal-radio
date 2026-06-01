@@ -10,7 +10,7 @@ port              = 8420
 ring_buffer_mb    = 4
 default_source    = "local_files"     # local_files | youtube_music | jellyfin | external_audio
 fallback_source   = "local_files"
-ffmpeg_path       = ''                # blank = `ffmpeg` on PATH; shared by all sources
+ffmpeg_path       = ''                # blank = auto-download to fh6-radio/bin (else `ffmpeg` on PATH); shared by all sources
 
 [local_files]
 enabled            = true
@@ -23,7 +23,7 @@ supported_formats  = ["mp3", "flac", "wav", "ogg", "m4a", "opus", "aac", "wma", 
 [youtube_music]
 enabled            = false
 cookies_path       = ''                # optional Netscape cookies.txt
-yt_dlp_path        = ''                # blank = `yt-dlp` on PATH
+yt_dlp_path        = ''                # blank = auto-download to fh6-radio/bin (else `yt-dlp` on PATH)
 default_playlist   = ""
 shuffle            = true
 
@@ -45,6 +45,11 @@ enabled = false
 endpoint_id = ''
 # Empty = current Windows media session. Select a specific session from the dashboard when needed.
 media_session_id = ''
+
+[spotify]
+enabled            = false
+librespot_path     = ''                # blank = auto-download to fh6-radio/bin (else `librespot` on PATH)
+cache_dir          = 'spotify_cache'   # folder to save the Spotify Connect auth data
 
 [audio]
 output_gain = 1.0

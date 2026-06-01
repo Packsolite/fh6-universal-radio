@@ -72,6 +72,12 @@ struct ExternalAudioConfig {
     std::string media_session_id;
 };
 
+struct SpotifyConfig {
+    bool enabled = false;
+    std::filesystem::path librespot_path; // empty = look up on PATH
+    std::filesystem::path cache_dir = "spotify_cache";
+};
+
 struct Config {
     GeneralConfig general;
     LocalFilesConfig local_files;
@@ -79,6 +85,7 @@ struct Config {
     AudioConfig audio;
     JellyfinConfig jellyfin;
     ExternalAudioConfig external_audio;
+    SpotifyConfig spotify;
     PlaybackConfig playback;
 };
 

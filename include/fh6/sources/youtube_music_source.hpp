@@ -43,6 +43,7 @@ public:
 
     void set_shuffle(bool shuffle);
     void set_ffmpeg_path(std::filesystem::path p);
+    void set_yt_dlp_path(std::filesystem::path p);
     void set_playback_options(const PlaybackConfig& opts) override;
 
     TrackInfo current_track() const override;

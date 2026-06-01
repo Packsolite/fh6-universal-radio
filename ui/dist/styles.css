@@ -268,6 +268,24 @@ output { text-align: right; color: var(--text-dim); font-variant-numeric: tabula
 
 .stat .value.warn { color: var(--warn); }
 
+/* Dependency download status */
+.dep-row {
+  display: grid; grid-template-columns: 90px 1fr; align-items: center;
+  gap: 8px 12px; padding: 8px 0; border-top: 1px solid var(--line);
+}
+
+.dep-row:first-child { border-top: 0; }
+
+.dep-name { font-size: 13px; color: var(--text); }
+
+.dep-state { font-size: 12px; color: var(--text-dim); text-align: right; }
+
+.dep-state.err { color: var(--danger); }
+
+.dep-bar { grid-column: 1 / -1; height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
+
+.dep-fill { height: 100%; background: var(--accent); width: 0%; transition: width .25s linear; }
+
 /* Settings drawer */
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100%);

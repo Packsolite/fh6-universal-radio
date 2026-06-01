@@ -114,6 +114,11 @@ void YouTubeMusicSource::set_ffmpeg_path(std::filesystem::path p) {
     ffmpeg_path_ = std::move(p);
 }
 
+void YouTubeMusicSource::set_yt_dlp_path(std::filesystem::path p) {
+    std::scoped_lock lk{mu_};
+    cfg_.yt_dlp_path = std::move(p);
+}
+
 void YouTubeMusicSource::set_shuffle(bool shuffle) {
     std::scoped_lock lk{mu_};
     cfg_.shuffle = shuffle;

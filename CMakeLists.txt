@@ -48,6 +48,7 @@ add_library(version SHARED
     src/log.cpp
     src/config.cpp
     src/config_store.cpp
+    src/deps.cpp
     src/playback_dsp.cpp
     src/ring_buffer.cpp
     src/subprocess.cpp
@@ -65,6 +66,7 @@ add_library(version SHARED
     src/sources/jellyfin_source.cpp
     src/sources/external_audio_source.cpp
     src/sources/external_media_session.cpp
+    src/sources/spotify_source.cpp
 )
 
 # MSVC carries the forwarders via pragmas in dll_main.cpp because its .def

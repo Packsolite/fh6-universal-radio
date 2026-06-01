@@ -253,6 +253,64 @@ function renderExternalAudioCard() {
       : "Ready. Switch to External Audio in Sources to go on air.";
 }
 
+let depsTools = [];
+
+function ensureDepsCard() {
+  let card = $("#deps-card");
+  if (card) return card;
+  card = document.createElement("section");
+  card.id = "deps-card";
+  card.className = "card";
+  card.hidden = true;
+  card.innerHTML = `
+    <h2>Dependencies</h2>
+    <p class="muted">Fetching the tools the providers need (ffmpeg, yt-dlp, librespot) into <code>fh6-radio/bin</code>.</p>
+    <div id="deps-list"></div>
+  `;
+  document.querySelector("main")?.appendChild(card);
+  return card;
+}
+
+function depRow(t) {
+  let label, cls = "";
+  if (t.downloading) {
+    const pct = t.total_bytes ? Math.round((t.downloaded_bytes / t.total_bytes) * 100) : null;
+    label = pct === null ? `downloading ${(t.downloaded_bytes / 1e6).toFixed(1)} MB` : `downloading ${pct}%`;
+  } else if (t.error) {
+    label = t.error; cls = "err";
+  } else {
+    label = "ready";
+  }
+  const pct = t.downloading && t.total_bytes ? (t.downloaded_bytes / t.total_bytes) * 100 : 0;
+  return `<div class="dep-row">
+    <span class="dep-name">${t.name}</span>
+    <span class="dep-state ${cls}">${label}</span>
+    <div class="dep-bar"><div class="dep-fill" style="width:${pct}%"></div></div>
+  </div>`;
+}
+
+function renderDeps() {
+  const card = ensureDepsCard();
+  const shown = depsTools.filter(t => t.downloading || t.error);
+  card.hidden = shown.length === 0;
+  if (card.hidden) return;
+  const sig = depsTools.map(t => `${t.name}:${t.downloading}:${t.downloaded_bytes}:${t.error}`).join("|");
+  if (card.dataset.sig === sig) return;
+  card.dataset.sig = sig;
+  $("#deps-list", card).innerHTML = depsTools.map(depRow).join("");
+}
+
+async function pollDeps() {
+  try {
+    const r = await api.get("/api/deps");
+    depsTools = Array.isArray(r.tools) ? r.tools : [];
+    renderDeps();
+  } catch { /* keep last */ }
+  // Poll fast while anything is moving, slow once settled.
+  const active = depsTools.some(t => t.downloading);
+  setTimeout(pollDeps, active ? 1000 : 5000);
+}
+
 let volDirty = false;
 function renderOutput() {
   const gain = state?.audio?.output_gain ?? 0;
@@ -297,6 +355,11 @@ const SCHEMA = [
   ]],
   ["external_audio", "External Audio", [
     ["enabled",          "Enabled",          "checkbox"],
+  ]],
+  ["spotify", "Spotify Connect", [
+    ["enabled",        "Enabled",                    "checkbox"],
+    ["librespot_path", "librespot.exe path",         "text"],
+    ["cache_dir",      "Cache directory",            "text"],
   ]],
   ["audio", "Audio", [
     ["output_gain", "Output gain", "number", 0, 1, 0.01],
@@ -503,6 +566,7 @@ async function startDashboard() {
   try { cfg = await api.get("/api/config"); }
   catch { cfg = {}; }
   connect();
+  pollDeps();
 }
 
 wire();

@@ -1,0 +1,38 @@
+name: librespot
+
+# librespot ships no official binary, so we build one and publish it to the
+# `deps` release. The mod's DependencyManager downloads from there on first run.
+# Run manually from the Actions tab after bumping LIBRESPOT_VERSION.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  LIBRESPOT_VERSION: "0.8.0"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build librespot
+        run: cargo install librespot --version ${{ env.LIBRESPOT_VERSION }} --locked --root staging
+
+      - name: Stage binary
+        run: copy staging\bin\librespot.exe librespot.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: librespot
+          path: librespot.exe
+
+      - name: Publish to deps release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: deps
+          name: Provider dependencies
+          files: librespot.exe

@@ -78,6 +78,13 @@ Config load_config(const std::filesystem::path& path) {
     cfg.youtube_music.default_playlist = pick<std::string>(ym, "default_playlist", "");
     cfg.youtube_music.shuffle          = pick<bool>(ym, "shuffle", cfg.youtube_music.shuffle);
 
+    const auto& sp                     = section(root, "spotify");
+    cfg.spotify.enabled                = pick<bool>(sp, "enabled", cfg.spotify.enabled);
+    cfg.spotify.librespot_path         = pick_path(sp, "librespot_path");
+    if (sp.contains("cache_dir")) {
+        cfg.spotify.cache_dir          = pick_path(sp, "cache_dir");
+    }
+
     const auto& jf = section(root, "jellyfin");
     cfg.jellyfin.enabled = pick<bool>(jf, "enabled", cfg.jellyfin.enabled);
     cfg.jellyfin.server_url = pick<std::string>(jf, "server_url", cfg.jellyfin.server_url);
@@ -252,6 +259,11 @@ void save_config(const std::filesystem::path& path, const Config& cfg) {
     e.kv("enabled", cfg.external_audio.enabled);
     e.kv("endpoint_id", cfg.external_audio.endpoint_id);
     e.kv("media_session_id", cfg.external_audio.media_session_id);
+
+    e.header("spotify");
+    e.kv("enabled", cfg.spotify.enabled);
+    e.kv_path("librespot_path", cfg.spotify.librespot_path);
+    e.kv_path("cache_dir", cfg.spotify.cache_dir);
 
     e.header("audio");
     e.kv("output_gain", (double)cfg.audio.output_gain);
