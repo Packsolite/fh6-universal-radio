@@ -110,22 +110,6 @@ Config load_config(const std::filesystem::path& path) {
         }
     } catch (...) {}
 
-    const auto& or_sec = section(root, "online_radio");
-    cfg.online_radio.enabled = pick<bool>(or_sec, "enabled", cfg.online_radio.enabled);
-    cfg.online_radio.default_station_index = pick<int>(or_sec, "default_station_index", cfg.online_radio.default_station_index);
-    try {
-        if (or_sec.contains("stations")) {
-            const auto& arr = toml::find<std::vector<toml::table>>(or_sec, "stations");
-            cfg.online_radio.stations.clear();
-            for (const auto& t : arr) {
-                RadioStation st;
-                if (t.count("name")) st.name = toml::get<std::string>(t.at("name"));
-                if (t.count("url"))  st.url  = toml::get<std::string>(t.at("url"));
-                cfg.online_radio.stations.push_back(st);
-            }
-        }
-    } catch (...) {}
-
     const auto& ea = section(root, "external_audio");
     cfg.external_audio.enabled = pick<bool>(ea, "enabled", cfg.external_audio.enabled);
     cfg.external_audio.endpoint_id =

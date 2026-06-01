@@ -75,9 +75,11 @@
         <h2>Play Online Radio</h2>
         <p class="muted">Paste any direct audio stream URL. The radio will switch sources and start streaming immediately.</p>
         <form id="or-cast" class="row">
-          <input type="text" id="or-url" placeholder="" autocomplete="off">
-          <button type="submit" class="primary">Play</button>
+          <input type="text" id="or-url" placeholder="" autocomplete="off" />
+          <button type="submit" class="btn filled">Play</button>
+          <button type="button" id="or-save" class="btn ghost">Save Station</button>
         </form>
+        <div id="or-station-view" style="display: flex; flex-direction: column; gap: 8px; margin-top: 16px;"></div>
       </section>
 
       <section class="card" id="output-card" hidden>
