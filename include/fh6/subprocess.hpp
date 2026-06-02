@@ -31,6 +31,10 @@ HANDLE create_kill_on_close_job();
 HANDLE spawn_in_job(HANDLE job, const std::wstring& cmd, HANDLE stdin_h, HANDLE stdout_h,
                     HANDLE stderr_h);
 
+// Manually terminates a process and all its children.
+// Crucial for Wine/Proton where Job Objects often fail to reap children.
+void kill_process_tree(DWORD pid);
+
 std::string describe_launch_failure(const std::wstring& bin, DWORD ec, bool from_config);
 
 } // namespace fh6::subprocess

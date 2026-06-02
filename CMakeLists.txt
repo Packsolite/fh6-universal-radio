@@ -68,6 +68,7 @@ add_library(version SHARED
     src/sources/external_audio_source.cpp
     src/sources/external_media_session.cpp
     src/sources/spotify_source.cpp
+    src/worker/worker_client.cpp
 )
 
 # MSVC carries the forwarders via pragmas in dll_main.cpp because its .def
@@ -87,5 +88,25 @@ target_link_libraries(version PRIVATE ws2_32 bcrypt psapi winhttp ole32 uuid ksu
 
 set_target_properties(version PROPERTIES
     OUTPUT_NAME version
+    PREFIX ""
+)
+
+# Worker process: lightweight spawner that lives outside the game's address
+# space so CreateProcess (= fork on Wine) is cheap.
+add_executable(fh6-radio-worker
+    src/worker/worker_main.cpp
+    src/subprocess.cpp
+    src/log.cpp
+)
+
+target_include_directories(fh6-radio-worker PRIVATE
+    include
+    third_party/nlohmann
+)
+
+target_link_libraries(fh6-radio-worker PRIVATE bcrypt)
+
+set_target_properties(fh6-radio-worker PROPERTIES
+    OUTPUT_NAME fh6-radio-worker
     PREFIX ""
 )

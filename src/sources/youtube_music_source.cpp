@@ -51,10 +51,17 @@ std::string watch_url_for_id(std::string_view id) {
 } // namespace
 
 struct YouTubeMusicSource::Pipe {
+    // -- worker mode: worker manages child processes --
+    worker::WorkerClient* worker = nullptr;
+    uint32_t pipeline_id = 0;
+
+    // -- direct mode: DLL manages child processes (fallback) --
     HANDLE job        = nullptr;
     HANDLE proc_yt    = nullptr;
     HANDLE proc_ff    = nullptr;
     HANDLE proc_title = nullptr;
+
+    // -- shared: data pipe handles (named pipe client or anonymous pipe read end) --
     HANDLE read_pipe  = nullptr;
     HANDLE title_pipe = nullptr;
     std::string title_buf;
@@ -67,20 +74,33 @@ struct YouTubeMusicSource::Pipe {
     TrackInfo info{};
 
     ~Pipe() {
-        // Close pipes first so any blocked ReadFile in the children unblocks
-        // with broken-pipe, then drop the job handle -- KILL_ON_JOB_CLOSE
-        // reaps the entire tree (yt-dlp + deno + ffmpeg + title resolver).
-        if (read_pipe) CloseHandle(read_pipe);
-        if (title_pipe) CloseHandle(title_pipe);
+        if (read_pipe) { CloseHandle(read_pipe); read_pipe = nullptr; }
+        if (title_pipe) { CloseHandle(title_pipe); title_pipe = nullptr; }
+        // Worker mode: ask worker to terminate the child tree.
+        if (worker && pipeline_id) worker->kill_pipeline(pipeline_id);
+        // Direct mode: job + process handle cleanup.
+        if (proc_yt) {
+            DWORD pid = GetProcessId(proc_yt);
+            if (pid) subprocess::kill_process_tree(pid);
+            CloseHandle(proc_yt);
+        }
+        if (proc_ff) {
+            DWORD pid = GetProcessId(proc_ff);
+            if (pid) subprocess::kill_process_tree(pid);
+            CloseHandle(proc_ff);
+        }
+        if (proc_title) {
+            DWORD pid = GetProcessId(proc_title);
+            if (pid) subprocess::kill_process_tree(pid);
+            CloseHandle(proc_title);
+        }
         if (job) CloseHandle(job);
-        if (proc_yt) CloseHandle(proc_yt);
-        if (proc_ff) CloseHandle(proc_ff);
-        if (proc_title) CloseHandle(proc_title);
     }
 };
 
-YouTubeMusicSource::YouTubeMusicSource(YouTubeMusicConfig cfg, std::filesystem::path ffmpeg_path)
-    : cfg_{std::move(cfg)}, ffmpeg_path_{std::move(ffmpeg_path)} {}
+YouTubeMusicSource::YouTubeMusicSource(YouTubeMusicConfig cfg, std::filesystem::path ffmpeg_path,
+                                       worker::WorkerClient* worker)
+    : cfg_{std::move(cfg)}, ffmpeg_path_{std::move(ffmpeg_path)}, worker_{worker} {}
 
 YouTubeMusicSource::~YouTubeMusicSource() { stop_pipe_locked(); }
 
@@ -162,52 +182,45 @@ void YouTubeMusicSource::resolve_queue_locked() {
         return;
     }
 
-    // Playlist URL: enumerate IDs via --flat-playlist. Synchronous because the
-    // HTTP cast handler can afford a few seconds; the alternative is a worker
-    // thread + a longer-lived state machine for a marginal UX win.
-    HANDLE job = create_kill_on_close_job();
-    if (!job) {
-        log::warn("[yt] resolve_queue: CreateJobObject failed ({})", GetLastError());
-        return;
-    }
-
-    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
-    HANDLE rd = nullptr, wr = nullptr;
-    if (!CreatePipe(&rd, &wr, &sa, 1 << 16)) {
-        CloseHandle(job);
-        return;
-    }
-    SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
-
-    HANDLE nul_in  = open_nul(GENERIC_READ);
-    HANDLE err_log = open_stderr_log();
+    // Playlist URL: enumerate IDs via --flat-playlist.
     const auto yt  = cfg_.yt_dlp_path.empty() ? L"yt-dlp" : cfg_.yt_dlp_path.wstring();
-
     std::wstring cmd = quote(yt) + L" --no-warnings --flat-playlist --skip-download "
                                    L"--print \"%(id)s\" ";
     if (!cfg_.cookies_path.empty())
         cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
     cmd += L"-- " + quote(widen(target_url_));
 
-    HANDLE proc = spawn_in_job(job, cmd, nul_in, wr, err_log);
-    // Capture the error before any other Win32 call clobbers it (CloseHandle resets it).
-    const DWORD ec_yt = proc ? 0u : GetLastError();
-    CloseHandle(wr);
-    if (nul_in) CloseHandle(nul_in);
-    if (err_log) CloseHandle(err_log);
-    if (!proc) {
-        CloseHandle(rd);
-        CloseHandle(job);
-        log::warn("[yt] resolve_queue: failed to launch yt-dlp -- {}",
-                  describe_launch_failure(std::wstring{yt}, ec_yt, !cfg_.yt_dlp_path.empty()));
-        return;
+    std::string raw;
+    if (worker_ && worker_->alive()) {
+        // Delegate to worker process -- avoids fork() of the game process.
+        raw = worker_->run_capture(cmd);
+    } else {
+        // Fallback: direct spawn (original path).
+        HANDLE job = create_kill_on_close_job();
+        if (!job) {
+            log::warn("[yt] resolve_queue: CreateJobObject failed ({})", GetLastError());
+            return;
+        }
+        SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+        HANDLE rd = nullptr, wr = nullptr;
+        if (!CreatePipe(&rd, &wr, &sa, 1 << 16)) { CloseHandle(job); return; }
+        SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
+        HANDLE nul_in  = open_nul(GENERIC_READ);
+        HANDLE err_log = open_stderr_log();
+        HANDLE proc = spawn_in_job(job, cmd, nul_in, wr, err_log);
+        const DWORD ec_yt = proc ? 0u : GetLastError();
+        CloseHandle(wr);
+        if (nul_in)  CloseHandle(nul_in);
+        if (err_log) CloseHandle(err_log);
+        if (!proc) {
+            CloseHandle(rd); CloseHandle(job);
+            log::warn("[yt] resolve_queue: failed to launch yt-dlp -- {}",
+                      describe_launch_failure(std::wstring{yt}, ec_yt, !cfg_.yt_dlp_path.empty()));
+            return;
+        }
+        raw = drain_to_eof(rd);
+        CloseHandle(rd); CloseHandle(proc); CloseHandle(job);
     }
-
-    std::string raw = drain_to_eof(rd);
-    CloseHandle(rd);
-    CloseHandle(proc);
-    CloseHandle(job); // KILL_ON_JOB_CLOSE -- ensures any straggling deno child dies
-
     for (std::size_t pos = 0; pos < raw.size();) {
         auto nl   = raw.find('\n', pos);
         auto end  = (nl == std::string::npos) ? raw.size() : nl;
@@ -242,6 +255,48 @@ YouTubeMusicSource::spawn_pipe_locked(std::string_view url, std::size_t for_idx)
     pipe->info.title    = "(loading)";
     pipe->info.artist   = "YouTube Music";
 
+    const auto yt = cfg_.yt_dlp_path.empty() ? L"yt-dlp" : cfg_.yt_dlp_path.wstring();
+    const auto ff = ffmpeg_path_.empty() ? L"ffmpeg" : ffmpeg_path_.wstring();
+
+    std::wstring yt_cmd = quote(yt) + L" --no-warnings --no-progress "
+                                      L"--format bestaudio/best --no-playlist -o - ";
+    if (!cfg_.cookies_path.empty())
+        yt_cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
+    yt_cmd += L"-- " + quote(widen(play_url));
+
+    std::wstring ff_cmd = quote(ff) + L" -loglevel error -i pipe:0 -f s16le ";
+    if (volume_norm_.load(std::memory_order_acquire))
+        ff_cmd += L"-af loudnorm=I=-14:TP=-2:LRA=11 ";
+    ff_cmd += L"-acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
+
+    std::wstring tl_cmd = quote(yt) + L" --skip-download --no-warnings --no-playlist "
+                                      L"--encoding UTF-8 "
+                                      L"--print \"%(title)s\" "
+                                      L"--print \"%(uploader)s\" "
+                                      L"--print \"%(duration)s\" "
+                                      L"--print \"%(thumbnail)s\" ";
+    if (!cfg_.cookies_path.empty())
+        tl_cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
+    tl_cmd += L"-- " + quote(widen(play_url));
+
+    // ---- Worker path: delegate all CreateProcess calls to the worker ----
+    if (worker_ && worker_->alive()) {
+        auto result = worker_->spawn_pipeline({yt_cmd, ff_cmd}, tl_cmd);
+        if (!result.ok) {
+            log::warn("[yt] worker spawn_pipeline failed for {}", play_url);
+            return nullptr;
+        }
+        pipe->worker      = worker_;
+        pipe->pipeline_id = result.pipeline_id;
+        pipe->read_pipe   = result.pcm_pipe;
+        pipe->title_pipe  = result.meta_pipe;
+
+        log::info("[yt] pipe started via worker for {} (track {}/{})",
+                  play_url, for_idx + 1, queue_.size());
+        return pipe;
+    }
+
+    // ---- Direct path: original CreateProcess calls (fallback) ----
     pipe->job = create_kill_on_close_job();
     if (!pipe->job) {
         log::warn("[yt] CreateJobObject failed ({})", GetLastError());
@@ -281,39 +336,9 @@ YouTubeMusicSource::spawn_pipe_locked(std::string_view url, std::size_t for_idx)
     HANDLE nul_in  = open_nul(GENERIC_READ);
     HANDLE err_log = open_stderr_log();
 
-    const auto yt = cfg_.yt_dlp_path.empty() ? L"yt-dlp" : cfg_.yt_dlp_path.wstring();
-    const auto ff = ffmpeg_path_.empty() ? L"ffmpeg" : ffmpeg_path_.wstring();
-
-    // `--` terminates options so a URL starting with `-` isn't read as a flag.
-    // `--no-playlist` keeps yt-dlp on the single video even if the resolved
-    // queue item carries a leftover list= param.
-    std::wstring yt_cmd = quote(yt) + L" --no-warnings --no-progress "
-                                      L"--format bestaudio/best --no-playlist -o - ";
-    if (!cfg_.cookies_path.empty())
-        yt_cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
-    yt_cmd += L"-- " + quote(widen(play_url));
-
-    // EBU R128 loudness normalisation.
-    // Single-pass / dynamic mode: less precise than the two-pass measurement,
-    // but adequate for live playback.
-    std::wstring ff_cmd = quote(ff) + L" -loglevel error -i pipe:0 -f s16le ";
-    if (volume_norm_.load(std::memory_order_acquire)) ff_cmd += L"-af loudnorm=I=-14:TP=-2:LRA=11 ";
-    ff_cmd += L"-acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
-
-    std::wstring tl_cmd = quote(yt) + L" --skip-download --no-warnings --no-playlist "
-                                      L"--encoding UTF-8 "
-                                      L"--print \"%(title)s\" "
-                                      L"--print \"%(uploader)s\" "
-                                      L"--print \"%(duration)s\" "
-                                      L"--print \"%(thumbnail)s\" ";
-    if (!cfg_.cookies_path.empty())
-        tl_cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
-    tl_cmd += L"-- " + quote(widen(play_url));
-
-    pipe->proc_yt     = spawn_in_job(pipe->job, yt_cmd, nul_in, yt_out_w, err_log);
+    pipe->proc_yt = spawn_in_job(pipe->job, yt_cmd, nul_in, yt_out_w, err_log);
     const DWORD ec_yt = pipe->proc_yt ? 0u : GetLastError();
-    CloseHandle(yt_out_w);
-    yt_out_w = nullptr;
+    CloseHandle(yt_out_w); yt_out_w = nullptr;
     if (!pipe->proc_yt) {
         log::warn("[yt] failed to launch yt-dlp -- {}",
                   describe_launch_failure(std::wstring{yt}, ec_yt, !cfg_.yt_dlp_path.empty()));
@@ -335,20 +360,17 @@ YouTubeMusicSource::spawn_pipe_locked(std::string_view url, std::size_t for_idx)
         if (ff_out_r) CloseHandle(ff_out_r);
         if (tl_out_r) CloseHandle(tl_out_r);
         if (tl_out_w) CloseHandle(tl_out_w);
-        if (nul_in) CloseHandle(nul_in);
-        if (err_log) CloseHandle(err_log);
-        return nullptr; // ~Pipe closes the job, which kills the orphan yt-dlp
+        if (nul_in)   CloseHandle(nul_in);
+        if (err_log)  CloseHandle(err_log);
+        return nullptr;
     }
 
     pipe->proc_title = spawn_in_job(pipe->job, tl_cmd, nul_in, tl_out_w, err_log);
-    CloseHandle(tl_out_w);
-    tl_out_w = nullptr;
+    CloseHandle(tl_out_w); tl_out_w = nullptr;
     if (pipe->proc_title) {
-        pipe->title_pipe = tl_out_r;
-        tl_out_r         = nullptr;
+        pipe->title_pipe = tl_out_r; tl_out_r = nullptr;
     } else if (tl_out_r) {
-        CloseHandle(tl_out_r);
-        tl_out_r = nullptr;
+        CloseHandle(tl_out_r); tl_out_r = nullptr;
     }
 
     if (nul_in) CloseHandle(nul_in);

@@ -102,7 +102,19 @@ std::string sniff_image_mime(const std::string& d) noexcept {
 }
 
 // Copy the embedded cover out via one ffmpeg pass; empty when there's none.
-ArtworkImage extract_cover(const std::wstring& ff_bin, const std::filesystem::path& file) {
+ArtworkImage extract_cover(const std::wstring& ff_bin, const std::filesystem::path& file, worker::WorkerClient* worker) {
+    const std::wstring cmd =
+        quote(ff_bin) + L" -hide_banner -nostdin -loglevel error -i " + quote(file.wstring()) +
+        L" -an -c:v copy -frames:v 1 -f image2pipe pipe:1";
+
+    if (worker && worker->alive()) {
+        std::string data = worker->run_capture(cmd, false);
+        ArtworkImage out;
+        out.mime = sniff_image_mime(data);
+        if (!out.mime.empty()) out.bytes = std::move(data);
+        return out;
+    }
+
     HANDLE job = create_kill_on_close_job();
     if (!job) return {};
 
@@ -114,11 +126,8 @@ ArtworkImage extract_cover(const std::wstring& ff_bin, const std::filesystem::pa
     }
     SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
 
-    HANDLE nul_in          = open_nul(GENERIC_READ);
-    HANDLE err_log         = open_stderr_log();
-    const std::wstring cmd = quote(ff_bin) + L" -hide_banner -nostdin -loglevel error -i " +
-                             quote(file.wstring()) +
-                             L" -an -c:v copy -frames:v 1 -f image2pipe pipe:1";
+    HANDLE nul_in  = open_nul(GENERIC_READ);
+    HANDLE err_log = open_stderr_log();
     HANDLE proc = spawn_in_job(job, cmd, nul_in, wr, err_log);
 
     CloseHandle(wr);
@@ -155,41 +164,46 @@ bool ieq_str(std::string_view a, std::string_view b) noexcept {
 
 // `ffmpeg -i <file>` with no output specified exits non-zero but first dumps
 // the input header (Duration + container Metadata block) to stderr.
-ProbedMetadata probe_metadata(const std::wstring& ff_bin, const std::filesystem::path& file) {
+ProbedMetadata probe_metadata(const std::wstring& ff_bin, const std::filesystem::path& file, worker::WorkerClient* worker) {
     ProbedMetadata out;
-
-    HANDLE job = create_kill_on_close_job();
-    if (!job) return out;
-
-    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
-    HANDLE rd = nullptr, wr = nullptr;
-    if (!CreatePipe(&rd, &wr, &sa, 1 << 16)) {
-        CloseHandle(job);
-        return out;
-    }
-    SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
-
-    HANDLE nul_in          = open_nul(GENERIC_READ);
-    HANDLE nul_out         = open_nul(GENERIC_WRITE);
-    const std::wstring cmd = quote(ff_bin) + L" -hide_banner -nostdin -i " + quote(file.wstring());
-    HANDLE proc            = spawn_in_job(job, cmd, nul_in, nul_out, wr);
-
-    CloseHandle(wr);
-    if (nul_in) CloseHandle(nul_in);
-    if (nul_out) CloseHandle(nul_out);
-    if (!proc) {
-        CloseHandle(rd);
-        CloseHandle(job);
-        return out;
-    }
+    const std::wstring cmd =
+        quote(ff_bin) + L" -hide_banner -nostdin -i " + quote(file.wstring());
 
     std::string err;
-    char buf[1024];
-    DWORD got = 0;
-    while (ReadFile(rd, buf, sizeof(buf), &got, nullptr) && got > 0) err.append(buf, got);
-    CloseHandle(rd);
-    CloseHandle(proc);
-    CloseHandle(job);
+    if (worker && worker->alive()) {
+        err = worker->run_capture(cmd, true);
+    } else {
+        HANDLE job = create_kill_on_close_job();
+        if (!job) return out;
+
+        SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+        HANDLE rd = nullptr, wr = nullptr;
+        if (!CreatePipe(&rd, &wr, &sa, 1 << 16)) {
+            CloseHandle(job);
+            return out;
+        }
+        SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
+
+        HANDLE nul_in  = open_nul(GENERIC_READ);
+        HANDLE nul_out = open_nul(GENERIC_WRITE);
+        HANDLE proc = spawn_in_job(job, cmd, nul_in, nul_out, wr);
+
+        CloseHandle(wr);
+        if (nul_in)  CloseHandle(nul_in);
+        if (nul_out) CloseHandle(nul_out);
+        if (!proc) {
+            CloseHandle(rd);
+            CloseHandle(job);
+            return out;
+        }
+
+        char buf[1024];
+        DWORD got = 0;
+        while (ReadFile(rd, buf, sizeof(buf), &got, nullptr) && got > 0) err.append(buf, got);
+        CloseHandle(rd);
+        CloseHandle(proc);
+        CloseHandle(job);
+    }
 
     if (auto pos = err.find("Duration:"); pos != std::string::npos) {
         pos += 9;
@@ -265,6 +279,8 @@ struct LocalFileSource::Decoder {
     bool ma_open = false;
     bool ma_eof  = false;
 
+    worker::WorkerClient* worker = nullptr;
+    uint32_t pipeline_id         = 0;
     HANDLE ff_job              = nullptr;
     HANDLE ff_proc             = nullptr;
     HANDLE ff_pipe             = nullptr;
@@ -281,18 +297,24 @@ struct LocalFileSource::Decoder {
     bool any_open() const noexcept { return ma_open || ff_pipe != nullptr; }
 
     ~Decoder() {
-        if (ma_open) ma_decoder_uninit(&ma);
-        if (ff_pipe) CloseHandle(ff_pipe);
-        if (ff_proc) CloseHandle(ff_proc);
+        if (ma_open)  ma_decoder_uninit(&ma);
+        if (ff_pipe) { CloseHandle(ff_pipe); ff_pipe = nullptr; }
+        if (worker && pipeline_id) worker->kill_pipeline(pipeline_id);
+
+        if (ff_proc) {
+            DWORD pid = GetProcessId(ff_proc);
+            if (pid) subprocess::kill_process_tree(pid);
+            CloseHandle(ff_proc);
+        }
         // KILL_ON_JOB_CLOSE on the job reaps ffmpeg if it's still resident.
         if (ff_job) CloseHandle(ff_job);
     }
 };
 
 LocalFileSource::LocalFileSource(LocalFilesConfig cfg, std::filesystem::path ffmpeg_path,
-                                 std::filesystem::path index_path)
+                                 std::filesystem::path index_path, worker::WorkerClient* worker)
     : cfg_{std::move(cfg)}, ffmpeg_path_{std::move(ffmpeg_path)},
-      index_path_{std::move(index_path)} {}
+      index_path_{std::move(index_path)}, worker_{worker} {}
 
 LocalFileSource::~LocalFileSource() {
     stop_tag_thread();
@@ -596,7 +618,7 @@ void LocalFileSource::index_worker(const std::vector<std::filesystem::path>& pat
             auto it = index_.find(key);
             if (it != index_.end() && it->second.mtime == mt) continue;
         }
-        ProbedMetadata m = probe_metadata(ff, p);
+        ProbedMetadata m = probe_metadata(ff, p, worker_);
         TrackMeta tm;
         tm.mtime        = mt;
         tm.album        = std::move(m.album);
@@ -653,12 +675,12 @@ std::unique_ptr<LocalFileSource::Decoder> LocalFileSource::open_decoder_locked(s
     d->for_cursor = resolved;
 
     const std::wstring ff = ffmpeg_path_.empty() ? L"ffmpeg" : ffmpeg_path_.wstring();
-    auto meta             = probe_metadata(ff, path);
-    d->info.duration_ms   = meta.duration_ms;
-    d->info.title         = std::move(meta.title);
-    d->info.artist        = std::move(meta.artist);
-    d->info.album         = std::move(meta.album);
-    d->art                = extract_cover(ff, path);
+    auto meta      = probe_metadata(ff, path, worker_);
+    d->info.duration_ms = meta.duration_ms;
+    d->info.title       = std::move(meta.title);
+    d->info.artist      = std::move(meta.artist);
+    d->info.album       = std::move(meta.album);
+    d->art              = extract_cover(ff, path, worker_);
 
     ma_decoder_config mc = ma_decoder_config_init(ma_format_s16, 2, kSampleRate);
     if (ma_decoder_init_file(path.string().c_str(), &mc, &d->ma) == MA_SUCCESS) {
@@ -698,6 +720,22 @@ bool LocalFileSource::open_track(std::size_t index) {
 bool LocalFileSource::open_track_ffmpeg(Decoder& d, const std::filesystem::path& path) {
     const std::wstring ff = ffmpeg_path_.empty() ? L"ffmpeg" : ffmpeg_path_.wstring();
 
+    std::wstring cmd =
+        quote(ff) + L" -hide_banner -loglevel error -nostdin -vn -i " + quote(path.wstring()) +
+        L" -f s16le -acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
+
+    if (worker_ && worker_->alive()) {
+        auto result = worker_->spawn_single(cmd);
+        if (!result.ok) {
+            log::warn("[local] worker spawn_single failed for {}", path.string());
+            return false;
+        }
+        d.worker      = worker_;
+        d.pipeline_id = result.pipeline_id;
+        d.ff_pipe     = result.pcm_pipe;
+        return true;
+    }
+
     d.ff_job = create_kill_on_close_job();
     if (!d.ff_job) {
         log::warn("[local] ffmpeg fallback: CreateJobObject failed ({})", GetLastError());
@@ -709,11 +747,8 @@ bool LocalFileSource::open_track_ffmpeg(Decoder& d, const std::filesystem::path&
     if (!CreatePipe(&rd, &wr, &sa, 1 << 20)) return false;
     SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
 
-    HANDLE nul_in    = open_nul(GENERIC_READ);
-    HANDLE err_log   = open_stderr_log();
-    std::wstring cmd = quote(ff) + L" -hide_banner -loglevel error -nostdin -vn -i " +
-                       quote(path.wstring()) +
-                       L" -f s16le -acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
+    HANDLE nul_in  = open_nul(GENERIC_READ);
+    HANDLE err_log = open_stderr_log();
 
     d.ff_proc      = spawn_in_job(d.ff_job, cmd, nul_in, wr, err_log);
     const DWORD ec = d.ff_proc ? 0u : GetLastError();

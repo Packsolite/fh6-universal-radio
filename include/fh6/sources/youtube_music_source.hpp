@@ -2,6 +2,7 @@
 
 #include "fh6/audio_source.hpp"
 #include "fh6/config.hpp"
+#include "fh6/worker/worker_client.hpp"
 #include "fh6/playback_dsp.hpp"
 
 #include <atomic>
@@ -20,7 +21,8 @@ namespace fh6::sources {
 // item list up front (via --flat-playlist) so next() / previous() can walk it.
 class YouTubeMusicSource final : public IAudioSource {
 public:
-    YouTubeMusicSource(YouTubeMusicConfig cfg, std::filesystem::path ffmpeg_path);
+    YouTubeMusicSource(YouTubeMusicConfig cfg, std::filesystem::path ffmpeg_path,
+                        worker::WorkerClient* worker = nullptr);
     ~YouTubeMusicSource() override;
 
     std::string_view name() const noexcept override { return "youtube_music"; }
@@ -72,6 +74,7 @@ private:
 
     YouTubeMusicConfig cfg_;
     std::filesystem::path ffmpeg_path_;
+    worker::WorkerClient* worker_;
     std::unique_ptr<Pipe> pipe_;
     std::unique_ptr<Pipe> prefetch_; // pre-spawned next-track pipeline (or null)
 

@@ -1,0 +1,605 @@
+diff --cc include/fh6/sources/local_file_source.hpp
+index f4af20a,fecd8aa..0000000
+--- a/include/fh6/sources/local_file_source.hpp
++++ b/include/fh6/sources/local_file_source.hpp
+@@@ -3,9 -3,9 +3,10 @@@
+  #include "fh6/audio_source.hpp"
+  #include "fh6/config.hpp"
+  #include "fh6/playback_dsp.hpp"
++ #include "fh6/worker/worker_client.hpp"
+  
+  #include <atomic>
+ +#include <cstdint>
+  #include <filesystem>
+  #include <memory>
+  #include <mutex>
+@@@ -16,22 -13,10 +17,27 @@@
+  
+  namespace fh6::sources {
+  
+ +// One immediate subfolder (or drive, when listing the filesystem root) used by
+ +// the dashboard folder browser and the exclusion tree.
+ +struct FsEntry {
+ +    std::string name;
+ +    std::string path;
+ +    bool has_children = false;
+ +};
+ +
+ +// List immediate subdirectories of `dir`. An empty `dir` lists drive roots.
+ +std::vector<FsEntry> enumerate_dir(const std::filesystem::path& dir);
+ +
+  class LocalFileSource final : public IAudioSource {
+  public:
+++<<<<<<< Updated upstream
+ +    // index_path: where the tag-grouping metadata cache is persisted.
+ +    LocalFileSource(LocalFilesConfig cfg, std::filesystem::path ffmpeg_path,
+ +                    std::filesystem::path index_path);
+++=======
++     LocalFileSource(LocalFilesConfig cfg, std::filesystem::path ffmpeg_path,
++                     worker::WorkerClient* worker = nullptr);
+++>>>>>>> Stashed changes
+      ~LocalFileSource() override;
+  
+      std::string_view name() const noexcept override { return "local_files"; }
+@@@ -146,10 -70,9 +152,14 @@@ private
+  
+      LocalFilesConfig cfg_;
+      std::filesystem::path ffmpeg_path_;
+++<<<<<<< Updated upstream
+ +    std::filesystem::path index_path_;
+++=======
++     worker::WorkerClient* worker_;
+++>>>>>>> Stashed changes
+      std::vector<std::filesystem::path> playlist_;
+      std::size_t cursor_ = 0;
+ +    std::filesystem::path last_played_; // bag-shuffle: avoid an immediate repeat on wrap
+  
+      std::unique_ptr<Decoder> dec_;
+      std::unique_ptr<Decoder> prefetch_dec_;
+diff --cc src/bridge.cpp
+index 5de8e24,c24adc7..0000000
+--- a/src/bridge.cpp
++++ b/src/bridge.cpp
+@@@ -125,10 -141,11 +140,16 @@@ void run_bridge(HMODULE self) noexcept 
+      // Register/unregister sources to match the enabled flags. Called at
+      // startup and on every config change so toggling enabled adds/removes
+      // the dashboard tile live, without a game restart.
+-     auto sync_sources = [&mgr, &data_dir](const Config& c) {
++     auto sync_sources = [&mgr, &data_dir, &worker](const Config& c) {
+          if (c.local_files.enabled && !mgr.find("local_files")) {
+++<<<<<<< Updated upstream
+ +            auto src = std::make_unique<sources::LocalFileSource>(
+ +                c.local_files, c.general.ffmpeg_path, data_dir / "local_index.json");
+++=======
++             auto src = std::make_unique<sources::LocalFileSource>(c.local_files,
++                                                                   c.general.ffmpeg_path,
++                                                                   &worker);
+++>>>>>>> Stashed changes
+              if (src->initialize()) mgr.register_source(std::move(src));
+          } else if (!c.local_files.enabled && mgr.find("local_files")) {
+              mgr.unregister_source("local_files");
+diff --cc src/sources/jellyfin_source.cpp
+index 755688e,38d3c83..0000000
+--- a/src/sources/jellyfin_source.cpp
++++ b/src/sources/jellyfin_source.cpp
+@@@ -123,21 -120,31 +123,46 @@@ std::mutex& fetch_serializer() 
+  } // namespace
+  
+  struct JellyfinSource::Pipe {
+++<<<<<<< Updated upstream
+ +    HANDLE job                  = nullptr;
+ +    HANDLE proc                 = nullptr;
+ +    HANDLE read_pipe            = nullptr;
+++=======
++     // -- worker mode: worker manages child processes --
++     worker::WorkerClient* worker = nullptr;
++     uint32_t pipeline_id = 0;
++ 
++     // -- direct mode: DLL manages child processes (fallback) --
++     HANDLE job       = nullptr;
++     HANDLE proc      = nullptr;
++ 
++     // -- shared: data pipe handle --
++     HANDLE read_pipe = nullptr;
+++>>>>>>> Stashed changes
+      std::uint64_t bytes_written = 0;
+      std::atomic<std::uint64_t> position_ms{0};
+ -    bool ended = false;
+ +    bool ended                = false;
+      std::size_t for_queue_idx = 0;
+  
+      ~Pipe() {
+++<<<<<<< Updated upstream
+ +        // Close the read side first so ffmpeg's next write returns
+ +        // ERROR_BROKEN_PIPE; dropping the job handle then reaps it via
+ +        // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
+ +        if (read_pipe) CloseHandle(read_pipe);
+ +        if (job) CloseHandle(job);
+ +        if (proc) CloseHandle(proc);
+++=======
++         if (read_pipe) { CloseHandle(read_pipe); read_pipe = nullptr; }
++         if (worker && pipeline_id) worker->kill_pipeline(pipeline_id);
++ 
++         if (proc) {
++             DWORD pid = GetProcessId(proc);
++             if (pid) subprocess::kill_process_tree(pid);
++             CloseHandle(proc);
++         }
++         if (job) CloseHandle(job);
+++>>>>>>> Stashed changes
+      }
+  };
+  
+@@@ -169,12 -177,40 +195,43 @@@ void JellyfinSource::shutdown() noexcep
+      stop_pipe_locked();
+  }
+  
+ -std::unique_ptr<JellyfinSource::Pipe>
+ -JellyfinSource::spawn_pipe_locked(std::size_t for_idx) {
+ +std::unique_ptr<JellyfinSource::Pipe> JellyfinSource::spawn_pipe_locked(std::size_t for_idx) {
+      if (queue_.empty() || for_idx >= queue_.size()) return nullptr;
+  
+ -    auto pipe = std::make_unique<Pipe>();
+ +    auto pipe           = std::make_unique<Pipe>();
+      pipe->for_queue_idx = for_idx;
+++<<<<<<< Updated upstream
+ +    pipe->job           = create_kill_on_close_job();
+++=======
++     const std::wstring auth_header = widen(std::format(
++         "Authorization: MediaBrowser Token=\"{}\"\r\n", cfg_.api_key));
++ 
++     const std::wstring ff = ffmpeg_path_.empty() ? std::wstring{L"ffmpeg"}
++                                                  : ffmpeg_path_.wstring();
++     const std::string stream_url = std::format("{}/Audio/{}/stream?static=true",
++                                                 cfg_.server_url, queue_[for_idx].id);
++ 
++     std::wstring cmd = quote(ff) +
++         L" -loglevel error -headers " + quote(auth_header) +
++         L" -i " + quote(widen(stream_url)) + L" -f s16le ";
++     if (volume_norm_.load(std::memory_order_acquire))
++         cmd += L"-af loudnorm=I=-14:TP=-2:LRA=11 ";
++     cmd += L"-acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
++ 
++     if (worker_ && worker_->alive()) {
++         auto result = worker_->spawn_single(cmd);
++         if (!result.ok) {
++             log::warn("[jellyfin] worker spawn_single failed for {}", queue_[for_idx].id);
++             return nullptr;
++         }
++         pipe->worker      = worker_;
++         pipe->pipeline_id = result.pipeline_id;
++         pipe->read_pipe   = result.pcm_pipe;
++         return pipe;
++     }
++ 
++     pipe->job = create_kill_on_close_job();
+++>>>>>>> Stashed changes
+      if (!pipe->job) {
+          log::warn("[jellyfin] CreateJobObject failed ({})", GetLastError());
+          return nullptr;
+@@@ -188,24 -224,10 +245,28 @@@
+      HANDLE nul_in  = open_nul(GENERIC_READ);
+      HANDLE err_log = open_stderr_log();
+  
+++<<<<<<< Updated upstream
+ +    const std::wstring ff = ffmpeg_path_.empty() ? std::wstring{L"ffmpeg"} : ffmpeg_path_.wstring();
+ +    const std::string stream_url =
+ +        std::format("{}/Audio/{}/stream?static=true", cfg_.server_url, queue_[for_idx].id);
+ +    // Pass the API key via -headers so it isn't visible on the ffmpeg command
+ +    // line to other local processes. \r\n is the canonical separator ffmpeg
+ +    // expects between (and trailing) custom headers.
+ +    const std::wstring auth_header =
+ +        widen(std::format("Authorization: MediaBrowser Token=\"{}\"\r\n", cfg_.api_key));
+ +
+ +    std::wstring cmd = quote(ff) + L" -loglevel error -headers " + quote(auth_header) + L" -i " +
+ +                       quote(widen(stream_url)) + L" -f s16le ";
+ +    if (volume_norm_.load(std::memory_order_acquire)) cmd += L"-af loudnorm=I=-14:TP=-2:LRA=11 ";
+ +    cmd += L"-acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
+ +
+ +    pipe->proc     = spawn_in_job(pipe->job, cmd, nul_in, out_w, err_log);
+++=======
++     pipe->proc = spawn_in_job(pipe->job, cmd, nul_in, out_w, err_log);
+++>>>>>>> Stashed changes
+      const DWORD ec = pipe->proc ? 0u : GetLastError();
+      CloseHandle(out_w);
+ -    if (nul_in)  CloseHandle(nul_in);
+ +    if (nul_in) CloseHandle(nul_in);
+      if (err_log) CloseHandle(err_log);
+      if (!pipe->proc) {
+          CloseHandle(out_r);
+diff --cc src/sources/local_file_source.cpp
+index e290b02,ce0be62..0000000
+--- a/src/sources/local_file_source.cpp
++++ b/src/sources/local_file_source.cpp
+@@@ -114,11 -109,8 +126,16 @@@ ArtworkImage extract_cover(const std::w
+      }
+      SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+  
+++<<<<<<< Updated upstream
+ +    HANDLE nul_in          = open_nul(GENERIC_READ);
+ +    HANDLE err_log         = open_stderr_log();
+ +    const std::wstring cmd = quote(ff_bin) + L" -hide_banner -nostdin -loglevel error -i " +
+ +                             quote(file.wstring()) +
+ +                             L" -an -c:v copy -frames:v 1 -f image2pipe pipe:1";
+++=======
++     HANDLE nul_in  = open_nul(GENERIC_READ);
++     HANDLE err_log = open_stderr_log();
+++>>>>>>> Stashed changes
+      HANDLE proc = spawn_in_job(job, cmd, nul_in, wr, err_log);
+  
+      CloseHandle(wr);
+@@@ -155,41 -147,46 +172,74 @@@ bool ieq_str(std::string_view a, std::s
+  
+  // `ffmpeg -i <file>` with no output specified exits non-zero but first dumps
+  // the input header (Duration + container Metadata block) to stderr.
+- ProbedMetadata probe_metadata(const std::wstring& ff_bin, const std::filesystem::path& file) {
++ ProbedMetadata probe_metadata(const std::wstring& ff_bin, const std::filesystem::path& file, worker::WorkerClient* worker) {
+      ProbedMetadata out;
+++<<<<<<< Updated upstream
+ +
+ +    HANDLE job = create_kill_on_close_job();
+ +    if (!job) return out;
+ +
+ +    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+ +    HANDLE rd = nullptr, wr = nullptr;
+ +    if (!CreatePipe(&rd, &wr, &sa, 1 << 16)) {
+ +        CloseHandle(job);
+ +        return out;
+ +    }
+ +    SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
+ +
+ +    HANDLE nul_in          = open_nul(GENERIC_READ);
+ +    HANDLE nul_out         = open_nul(GENERIC_WRITE);
+ +    const std::wstring cmd = quote(ff_bin) + L" -hide_banner -nostdin -i " + quote(file.wstring());
+ +    HANDLE proc            = spawn_in_job(job, cmd, nul_in, nul_out, wr);
+ +
+ +    CloseHandle(wr);
+ +    if (nul_in) CloseHandle(nul_in);
+ +    if (nul_out) CloseHandle(nul_out);
+ +    if (!proc) {
+ +        CloseHandle(rd);
+ +        CloseHandle(job);
+ +        return out;
+ +    }
+++=======
++     const std::wstring cmd =
++         quote(ff_bin) + L" -hide_banner -nostdin -i " + quote(file.wstring());
+++>>>>>>> Stashed changes
+  
+      std::string err;
+-     char buf[1024];
+-     DWORD got = 0;
+-     while (ReadFile(rd, buf, sizeof(buf), &got, nullptr) && got > 0) err.append(buf, got);
+-     CloseHandle(rd);
+-     CloseHandle(proc);
+-     CloseHandle(job);
++     if (worker && worker->alive()) {
++         err = worker->run_capture(cmd, true);
++     } else {
++         HANDLE job = create_kill_on_close_job();
++         if (!job) return out;
++ 
++         SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
++         HANDLE rd = nullptr, wr = nullptr;
++         if (!CreatePipe(&rd, &wr, &sa, 1 << 16)) {
++             CloseHandle(job);
++             return out;
++         }
++         SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
++ 
++         HANDLE nul_in  = open_nul(GENERIC_READ);
++         HANDLE nul_out = open_nul(GENERIC_WRITE);
++         HANDLE proc = spawn_in_job(job, cmd, nul_in, nul_out, wr);
++ 
++         CloseHandle(wr);
++         if (nul_in)  CloseHandle(nul_in);
++         if (nul_out) CloseHandle(nul_out);
++         if (!proc) {
++             CloseHandle(rd);
++             CloseHandle(job);
++             return out;
++         }
++ 
++         char buf[1024];
++         DWORD got = 0;
++         while (ReadFile(rd, buf, sizeof(buf), &got, nullptr) && got > 0) err.append(buf, got);
++         CloseHandle(rd);
++         CloseHandle(proc);
++         CloseHandle(job);
++     }
+  
+      if (auto pos = err.find("Duration:"); pos != std::string::npos) {
+          pos += 9;
+@@@ -263,8 -229,10 +313,10 @@@ std::mt19937& thread_rng() 
+  struct LocalFileSource::Decoder {
+      ma_decoder ma{};
+      bool ma_open = false;
+ -    bool ma_eof = false;
+ +    bool ma_eof  = false;
+  
++     worker::WorkerClient* worker = nullptr;
++     uint32_t pipeline_id         = 0;
+      HANDLE ff_job              = nullptr;
+      HANDLE ff_proc             = nullptr;
+      HANDLE ff_pipe             = nullptr;
+@@@ -281,23 -249,26 +333,42 @@@
+      bool any_open() const noexcept { return ma_open || ff_pipe != nullptr; }
+  
+      ~Decoder() {
+++<<<<<<< Updated upstream
+ +        if (ma_open) ma_decoder_uninit(&ma);
+ +        if (ff_pipe) CloseHandle(ff_pipe);
+ +        if (ff_proc) CloseHandle(ff_proc);
+++=======
++         if (ma_open)  ma_decoder_uninit(&ma);
++         if (ff_pipe) { CloseHandle(ff_pipe); ff_pipe = nullptr; }
++         if (worker && pipeline_id) worker->kill_pipeline(pipeline_id);
++ 
++         if (ff_proc) {
++             DWORD pid = GetProcessId(ff_proc);
++             if (pid) subprocess::kill_process_tree(pid);
++             CloseHandle(ff_proc);
++         }
+++>>>>>>> Stashed changes
+          // KILL_ON_JOB_CLOSE on the job reaps ffmpeg if it's still resident.
+ -        if (ff_job)   CloseHandle(ff_job);
+ +        if (ff_job) CloseHandle(ff_job);
+      }
+  };
+  
+++<<<<<<< Updated upstream
+ +LocalFileSource::LocalFileSource(LocalFilesConfig cfg, std::filesystem::path ffmpeg_path,
+ +                                 std::filesystem::path index_path)
+ +    : cfg_{std::move(cfg)}, ffmpeg_path_{std::move(ffmpeg_path)},
+ +      index_path_{std::move(index_path)} {}
+++=======
++ LocalFileSource::LocalFileSource(LocalFilesConfig cfg, std::filesystem::path ffmpeg_path, worker::WorkerClient* worker)
++     : cfg_{std::move(cfg)},
++       ffmpeg_path_{std::move(ffmpeg_path)},
++       worker_{worker} {}
+++>>>>>>> Stashed changes
+  
+ -LocalFileSource::~LocalFileSource() { close_current(); }
+ +LocalFileSource::~LocalFileSource() {
+ +    stop_tag_thread();
+ +    close_current();
+ +}
+  
+  void LocalFileSource::shutdown() noexcept { close_current(); }
+  
+@@@ -649,16 -329,16 +720,25 @@@ std::unique_ptr<LocalFileSource::Decode
+      const std::size_t resolved = index % playlist_.size();
+      const auto& path           = playlist_[resolved];
+  
+ -    auto d         = std::make_unique<Decoder>();
+ -    d->for_cursor  = resolved;
+ +    auto d        = std::make_unique<Decoder>();
+ +    d->for_cursor = resolved;
+  
+      const std::wstring ff = ffmpeg_path_.empty() ? L"ffmpeg" : ffmpeg_path_.wstring();
+++<<<<<<< Updated upstream
+ +    auto meta             = probe_metadata(ff, path);
+ +    d->info.duration_ms   = meta.duration_ms;
+ +    d->info.title         = std::move(meta.title);
+ +    d->info.artist        = std::move(meta.artist);
+ +    d->info.album         = std::move(meta.album);
+ +    d->art                = extract_cover(ff, path);
+++=======
++     auto meta      = probe_metadata(ff, path, worker_);
++     d->info.duration_ms = meta.duration_ms;
++     d->info.title       = std::move(meta.title);
++     d->info.artist      = std::move(meta.artist);
++     d->info.album       = std::move(meta.album);
++     d->art              = extract_cover(ff, path, worker_);
+++>>>>>>> Stashed changes
+  
+      ma_decoder_config mc = ma_decoder_config_init(ma_format_s16, 2, kSampleRate);
+      if (ma_decoder_init_file(path.string().c_str(), &mc, &d->ma) == MA_SUCCESS) {
+@@@ -709,16 -405,13 +805,21 @@@ bool LocalFileSource::open_track_ffmpeg
+      if (!CreatePipe(&rd, &wr, &sa, 1 << 20)) return false;
+      SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
+  
+++<<<<<<< Updated upstream
+ +    HANDLE nul_in    = open_nul(GENERIC_READ);
+ +    HANDLE err_log   = open_stderr_log();
+ +    std::wstring cmd = quote(ff) + L" -hide_banner -loglevel error -nostdin -vn -i " +
+ +                       quote(path.wstring()) +
+ +                       L" -f s16le -acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
+++=======
++     HANDLE nul_in  = open_nul(GENERIC_READ);
++     HANDLE err_log = open_stderr_log();
+++>>>>>>> Stashed changes
+  
+ -    d.ff_proc = spawn_in_job(d.ff_job, cmd, nul_in, wr, err_log);
+ +    d.ff_proc      = spawn_in_job(d.ff_job, cmd, nul_in, wr, err_log);
+      const DWORD ec = d.ff_proc ? 0u : GetLastError();
+      CloseHandle(wr);
+ -    if (nul_in)  CloseHandle(nul_in);
+ +    if (nul_in) CloseHandle(nul_in);
+      if (err_log) CloseHandle(err_log);
+      if (!d.ff_proc) {
+          CloseHandle(rd);
+diff --cc src/sources/youtube_music_source.cpp
+index 4de6118,b33022a..0000000
+--- a/src/sources/youtube_music_source.cpp
++++ b/src/sources/youtube_music_source.cpp
+@@@ -67,15 -73,27 +74,39 @@@ struct YouTubeMusicSource::Pipe 
+      TrackInfo info{};
+  
+      ~Pipe() {
+++<<<<<<< Updated upstream
+ +        // Close pipes first so any blocked ReadFile in the children unblocks
+ +        // with broken-pipe, then drop the job handle -- KILL_ON_JOB_CLOSE
+ +        // reaps the entire tree (yt-dlp + deno + ffmpeg + title resolver).
+ +        if (read_pipe) CloseHandle(read_pipe);
+ +        if (title_pipe) CloseHandle(title_pipe);
+ +        if (job) CloseHandle(job);
+ +        if (proc_yt) CloseHandle(proc_yt);
+ +        if (proc_ff) CloseHandle(proc_ff);
+ +        if (proc_title) CloseHandle(proc_title);
+++=======
++         if (read_pipe) { CloseHandle(read_pipe); read_pipe = nullptr; }
++         if (title_pipe) { CloseHandle(title_pipe); title_pipe = nullptr; }
++         // Worker mode: ask worker to terminate the child tree.
++         if (worker && pipeline_id) worker->kill_pipeline(pipeline_id);
++         // Direct mode: job + process handle cleanup.
++         if (proc_yt) {
++             DWORD pid = GetProcessId(proc_yt);
++             if (pid) subprocess::kill_process_tree(pid);
++             CloseHandle(proc_yt);
++         }
++         if (proc_ff) {
++             DWORD pid = GetProcessId(proc_ff);
++             if (pid) subprocess::kill_process_tree(pid);
++             CloseHandle(proc_ff);
++         }
++         if (proc_title) {
++             DWORD pid = GetProcessId(proc_title);
++             if (pid) subprocess::kill_process_tree(pid);
++             CloseHandle(proc_title);
++         }
++         if (job) CloseHandle(job);
+++>>>>>>> Stashed changes
+      }
+  };
+  
+@@@ -189,25 -189,38 +202,60 @@@ void YouTubeMusicSource::resolve_queue_
+          cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
+      cmd += L"-- " + quote(widen(target_url_));
+  
+++<<<<<<< Updated upstream
+ +    HANDLE proc = spawn_in_job(job, cmd, nul_in, wr, err_log);
+ +    // Capture the error before any other Win32 call clobbers it (CloseHandle resets it).
+ +    const DWORD ec_yt = proc ? 0u : GetLastError();
+ +    CloseHandle(wr);
+ +    if (nul_in) CloseHandle(nul_in);
+ +    if (err_log) CloseHandle(err_log);
+ +    if (!proc) {
+ +        CloseHandle(rd);
+ +        CloseHandle(job);
+ +        log::warn("[yt] resolve_queue: failed to launch yt-dlp -- {}",
+ +                  describe_launch_failure(std::wstring{yt}, ec_yt, !cfg_.yt_dlp_path.empty()));
+ +        return;
+ +    }
+ +
+ +    std::string raw = drain_to_eof(rd);
+ +    CloseHandle(rd);
+ +    CloseHandle(proc);
+ +    CloseHandle(job); // KILL_ON_JOB_CLOSE -- ensures any straggling deno child dies
+ +
+++=======
++     std::string raw;
++     if (worker_ && worker_->alive()) {
++         // Delegate to worker process -- avoids fork() of the game process.
++         raw = worker_->run_capture(cmd);
++     } else {
++         // Fallback: direct spawn (original path).
++         HANDLE job = create_kill_on_close_job();
++         if (!job) {
++             log::warn("[yt] resolve_queue: CreateJobObject failed ({})", GetLastError());
++             return;
++         }
++         SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
++         HANDLE rd = nullptr, wr = nullptr;
++         if (!CreatePipe(&rd, &wr, &sa, 1 << 16)) { CloseHandle(job); return; }
++         SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
++         HANDLE nul_in  = open_nul(GENERIC_READ);
++         HANDLE err_log = open_stderr_log();
++         HANDLE proc = spawn_in_job(job, cmd, nul_in, wr, err_log);
++         const DWORD ec_yt = proc ? 0u : GetLastError();
++         CloseHandle(wr);
++         if (nul_in)  CloseHandle(nul_in);
++         if (err_log) CloseHandle(err_log);
++         if (!proc) {
++             CloseHandle(rd); CloseHandle(job);
++             log::warn("[yt] resolve_queue: failed to launch yt-dlp -- {}",
++                       describe_launch_failure(std::wstring{yt}, ec_yt, !cfg_.yt_dlp_path.empty()));
++             return;
++         }
++         raw = drain_to_eof(rd);
++         CloseHandle(rd); CloseHandle(proc); CloseHandle(job);
++     }
++ 
+++>>>>>>> Stashed changes
+      for (std::size_t pos = 0; pos < raw.size();) {
+          auto nl   = raw.find('\n', pos);
+          auto end  = (nl == std::string::npos) ? raw.size() : nl;
+@@@ -281,39 -327,9 +371,42 @@@ YouTubeMusicSource::spawn_pipe_locked(s
+      HANDLE nul_in  = open_nul(GENERIC_READ);
+      HANDLE err_log = open_stderr_log();
+  
+++<<<<<<< Updated upstream
+ +    const auto yt = cfg_.yt_dlp_path.empty() ? L"yt-dlp" : cfg_.yt_dlp_path.wstring();
+ +    const auto ff = ffmpeg_path_.empty() ? L"ffmpeg" : ffmpeg_path_.wstring();
+ +
+ +    // `--` terminates options so a URL starting with `-` isn't read as a flag.
+ +    // `--no-playlist` keeps yt-dlp on the single video even if the resolved
+ +    // queue item carries a leftover list= param.
+ +    std::wstring yt_cmd = quote(yt) + L" --no-warnings --no-progress "
+ +                                      L"--format bestaudio/best --no-playlist -o - ";
+ +    if (!cfg_.cookies_path.empty())
+ +        yt_cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
+ +    yt_cmd += L"-- " + quote(widen(play_url));
+ +
+ +    // EBU R128 loudness normalisation.
+ +    // Single-pass / dynamic mode: less precise than the two-pass measurement,
+ +    // but adequate for live playback.
+ +    std::wstring ff_cmd = quote(ff) + L" -loglevel error -i pipe:0 -f s16le ";
+ +    if (volume_norm_.load(std::memory_order_acquire)) ff_cmd += L"-af loudnorm=I=-14:TP=-2:LRA=11 ";
+ +    ff_cmd += L"-acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
+ +
+ +    std::wstring tl_cmd = quote(yt) + L" --skip-download --no-warnings --no-playlist "
+ +                                      L"--encoding UTF-8 "
+ +                                      L"--print \"%(title)s\" "
+ +                                      L"--print \"%(uploader)s\" "
+ +                                      L"--print \"%(duration)s\" "
+ +                                      L"--print \"%(thumbnail)s\" ";
+ +    if (!cfg_.cookies_path.empty())
+ +        tl_cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
+ +    tl_cmd += L"-- " + quote(widen(play_url));
+ +
+ +    pipe->proc_yt     = spawn_in_job(pipe->job, yt_cmd, nul_in, yt_out_w, err_log);
+++=======
++     pipe->proc_yt = spawn_in_job(pipe->job, yt_cmd, nul_in, yt_out_w, err_log);
+++>>>>>>> Stashed changes
+      const DWORD ec_yt = pipe->proc_yt ? 0u : GetLastError();
+-     CloseHandle(yt_out_w);
+-     yt_out_w = nullptr;
++     CloseHandle(yt_out_w); yt_out_w = nullptr;
+      if (!pipe->proc_yt) {
+          log::warn("[yt] failed to launch yt-dlp -- {}",
+                    describe_launch_failure(std::wstring{yt}, ec_yt, !cfg_.yt_dlp_path.empty()));
+@@@ -335,23 -349,20 +428,26 @@@
+          if (ff_out_r) CloseHandle(ff_out_r);
+          if (tl_out_r) CloseHandle(tl_out_r);
+          if (tl_out_w) CloseHandle(tl_out_w);
+++<<<<<<< Updated upstream
+ +        if (nul_in) CloseHandle(nul_in);
+ +        if (err_log) CloseHandle(err_log);
+ +        return nullptr; // ~Pipe closes the job, which kills the orphan yt-dlp
+++=======
++         if (nul_in)   CloseHandle(nul_in);
++         if (err_log)  CloseHandle(err_log);
++         return nullptr;
+++>>>>>>> Stashed changes
+      }
+  
+      pipe->proc_title = spawn_in_job(pipe->job, tl_cmd, nul_in, tl_out_w, err_log);
+-     CloseHandle(tl_out_w);
+-     tl_out_w = nullptr;
++     CloseHandle(tl_out_w); tl_out_w = nullptr;
+      if (pipe->proc_title) {
+-         pipe->title_pipe = tl_out_r;
+-         tl_out_r         = nullptr;
++         pipe->title_pipe = tl_out_r; tl_out_r = nullptr;
+      } else if (tl_out_r) {
+-         CloseHandle(tl_out_r);
+-         tl_out_r = nullptr;
++         CloseHandle(tl_out_r); tl_out_r = nullptr;
+      }
+  
+ -    if (nul_in)  CloseHandle(nul_in);
+ +    if (nul_in) CloseHandle(nul_in);
+      if (err_log) CloseHandle(err_log);
+  
+      pipe->read_pipe = ff_out_r;

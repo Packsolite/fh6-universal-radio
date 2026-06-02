@@ -1,6 +1,7 @@
 #include "fh6/subprocess.hpp"
 
 #include <format>
+#include <tlhelp32.h>
 
 namespace fh6::subprocess {
 
@@ -156,6 +157,27 @@ HANDLE spawn_in_job(HANDLE job, const std::wstring& cmd, HANDLE stdin_h, HANDLE 
     ResumeThread(pi.hThread);
     CloseHandle(pi.hThread);
     return pi.hProcess;
+}
+
+void kill_process_tree(DWORD pid) {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe;
+        pe.dwSize = sizeof(pe);
+        if (Process32FirstW(snap, &pe)) {
+            do {
+                if (pe.th32ParentProcessID == pid) {
+                    kill_process_tree(pe.th32ProcessID);
+                }
+            } while (Process32NextW(snap, &pe));
+        }
+        CloseHandle(snap);
+    }
+    HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
+    if (proc) {
+        TerminateProcess(proc, 1);
+        CloseHandle(proc);
+    }
 }
 
 std::string describe_launch_failure(const std::wstring& bin, DWORD ec, bool from_config) {

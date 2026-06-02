@@ -3,6 +3,7 @@
 #include "fh6/audio_source.hpp"
 #include "fh6/config.hpp"
 #include "fh6/playback_dsp.hpp"
+#include "fh6/worker/worker_client.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -31,7 +32,8 @@ class LocalFileSource final : public IAudioSource {
 public:
     // index_path: where the tag-grouping metadata cache is persisted.
     LocalFileSource(LocalFilesConfig cfg, std::filesystem::path ffmpeg_path,
-                    std::filesystem::path index_path);
+                    std::filesystem::path index_path,
+                    worker::WorkerClient* worker = nullptr);
     ~LocalFileSource() override;
 
     std::string_view name() const noexcept override { return "local_files"; }
@@ -147,6 +149,7 @@ private:
     LocalFilesConfig cfg_;
     std::filesystem::path ffmpeg_path_;
     std::filesystem::path index_path_;
+    worker::WorkerClient* worker_;
     std::vector<std::filesystem::path> playlist_;
     std::size_t cursor_ = 0;
     std::filesystem::path last_played_; // bag-shuffle: avoid an immediate repeat on wrap

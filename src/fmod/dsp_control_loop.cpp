@@ -57,18 +57,16 @@ ControlLoop::~ControlLoop() {
 void ControlLoop::run(const std::stop_token& tok) {
     log::info("[ctrl] control loop started");
 
-    bool acquired = false;
-    for (int attempt = 0; attempt < kDiscoveryTries && !tok.stop_requested(); ++attempt) {
+    while (!tok.stop_requested()) {
         if (acquire_target()) {
-            acquired = true;
             break;
         }
         for (auto t = std::chrono::steady_clock::now() + kDiscoveryRetry;
              std::chrono::steady_clock::now() < t && !tok.stop_requested();)
             std::this_thread::sleep_for(kTick);
     }
-    if (!acquired) {
-        log::warn("[ctrl] discovery timed out; control loop exiting");
+    
+    if (tok.stop_requested()) {
         return;
     }
 

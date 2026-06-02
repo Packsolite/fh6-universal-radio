@@ -4,6 +4,7 @@
 #include "fh6/config.hpp"
 #include "fh6/playback_dsp.hpp"
 #include "fh6/ring_buffer.hpp"
+#include "fh6/worker/worker_client.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -30,7 +31,8 @@ struct JellyfinTrack {
 // freeze the AudioSourceManager pump loop.
 class JellyfinSource final : public IAudioSource {
 public:
-    JellyfinSource(JellyfinConfig cfg, std::filesystem::path ffmpeg_path);
+    JellyfinSource(JellyfinConfig cfg, std::filesystem::path ffmpeg_path,
+                   worker::WorkerClient* worker = nullptr);
     ~JellyfinSource() override;
 
     std::string_view name() const noexcept override { return "jellyfin"; }
@@ -80,6 +82,7 @@ private:
 
     JellyfinConfig cfg_;
     std::filesystem::path ffmpeg_path_;
+    worker::WorkerClient* worker_;
 
     mutable std::mutex mu_;
     std::vector<JellyfinTrack> queue_;

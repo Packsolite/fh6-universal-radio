@@ -123,26 +123,37 @@ std::mutex& fetch_serializer() {
 } // namespace
 
 struct JellyfinSource::Pipe {
-    HANDLE job                  = nullptr;
-    HANDLE proc                 = nullptr;
-    HANDLE read_pipe            = nullptr;
+    // -- worker mode: worker manages child processes --
+    worker::WorkerClient* worker = nullptr;
+    uint32_t pipeline_id = 0;
+
+    // -- direct mode: DLL manages child processes (fallback) --
+    HANDLE job       = nullptr;
+    HANDLE proc      = nullptr;
+
+    // -- shared: data pipe handle --
+    HANDLE read_pipe = nullptr;
     std::uint64_t bytes_written = 0;
     std::atomic<std::uint64_t> position_ms{0};
     bool ended                = false;
     std::size_t for_queue_idx = 0;
 
     ~Pipe() {
-        // Close the read side first so ffmpeg's next write returns
-        // ERROR_BROKEN_PIPE; dropping the job handle then reaps it via
-        // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
-        if (read_pipe) CloseHandle(read_pipe);
+        if (read_pipe) { CloseHandle(read_pipe); read_pipe = nullptr; }
+        if (worker && pipeline_id) worker->kill_pipeline(pipeline_id);
+
+        if (proc) {
+            DWORD pid = GetProcessId(proc);
+            if (pid) subprocess::kill_process_tree(pid);
+            CloseHandle(proc);
+        }
         if (job) CloseHandle(job);
-        if (proc) CloseHandle(proc);
     }
 };
 
-JellyfinSource::JellyfinSource(JellyfinConfig cfg, std::filesystem::path ffmpeg_path)
-    : cfg_{std::move(cfg)}, ffmpeg_path_{std::move(ffmpeg_path)} {}
+JellyfinSource::JellyfinSource(JellyfinConfig cfg, std::filesystem::path ffmpeg_path,
+                               worker::WorkerClient* worker)
+    : cfg_{std::move(cfg)}, ffmpeg_path_{std::move(ffmpeg_path)}, worker_{worker} {}
 
 JellyfinSource::~JellyfinSource() {
     std::scoped_lock lk{mu_};
@@ -174,7 +185,34 @@ std::unique_ptr<JellyfinSource::Pipe> JellyfinSource::spawn_pipe_locked(std::siz
 
     auto pipe           = std::make_unique<Pipe>();
     pipe->for_queue_idx = for_idx;
-    pipe->job           = create_kill_on_close_job();
+    const std::wstring auth_header = widen(std::format(
+        "Authorization: MediaBrowser Token=\"{}\"\r\n", cfg_.api_key));
+
+    const std::wstring ff = ffmpeg_path_.empty() ? std::wstring{L"ffmpeg"}
+                                                 : ffmpeg_path_.wstring();
+    const std::string stream_url = std::format("{}/Audio/{}/stream?static=true",
+                                                cfg_.server_url, queue_[for_idx].id);
+
+    std::wstring cmd = quote(ff) +
+        L" -loglevel error -headers " + quote(auth_header) +
+        L" -i " + quote(widen(stream_url)) + L" -f s16le ";
+    if (volume_norm_.load(std::memory_order_acquire))
+        cmd += L"-af loudnorm=I=-14:TP=-2:LRA=11 ";
+    cmd += L"-acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
+
+    if (worker_ && worker_->alive()) {
+        auto result = worker_->spawn_single(cmd);
+        if (!result.ok) {
+            log::warn("[jellyfin] worker spawn_single failed for {}", queue_[for_idx].id);
+            return nullptr;
+        }
+        pipe->worker      = worker_;
+        pipe->pipeline_id = result.pipeline_id;
+        pipe->read_pipe   = result.pcm_pipe;
+        return pipe;
+    }
+
+    pipe->job = create_kill_on_close_job();
     if (!pipe->job) {
         log::warn("[jellyfin] CreateJobObject failed ({})", GetLastError());
         return nullptr;
@@ -188,21 +226,7 @@ std::unique_ptr<JellyfinSource::Pipe> JellyfinSource::spawn_pipe_locked(std::siz
     HANDLE nul_in  = open_nul(GENERIC_READ);
     HANDLE err_log = open_stderr_log();
 
-    const std::wstring ff = ffmpeg_path_.empty() ? std::wstring{L"ffmpeg"} : ffmpeg_path_.wstring();
-    const std::string stream_url =
-        std::format("{}/Audio/{}/stream?static=true", cfg_.server_url, queue_[for_idx].id);
-    // Pass the API key via -headers so it isn't visible on the ffmpeg command
-    // line to other local processes. \r\n is the canonical separator ffmpeg
-    // expects between (and trailing) custom headers.
-    const std::wstring auth_header =
-        widen(std::format("Authorization: MediaBrowser Token=\"{}\"\r\n", cfg_.api_key));
-
-    std::wstring cmd = quote(ff) + L" -loglevel error -headers " + quote(auth_header) + L" -i " +
-                       quote(widen(stream_url)) + L" -f s16le ";
-    if (volume_norm_.load(std::memory_order_acquire)) cmd += L"-af loudnorm=I=-14:TP=-2:LRA=11 ";
-    cmd += L"-acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
-
-    pipe->proc     = spawn_in_job(pipe->job, cmd, nul_in, out_w, err_log);
+    pipe->proc = spawn_in_job(pipe->job, cmd, nul_in, out_w, err_log);
     const DWORD ec = pipe->proc ? 0u : GetLastError();
     CloseHandle(out_w);
     if (nul_in) CloseHandle(nul_in);
