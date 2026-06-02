@@ -3,7 +3,7 @@
 # if you prefer hand edits. Windows paths should use TOML literal strings
 # (single quotes) so backslashes pass through verbatim:
 #
-#   music_dir = 'C:\Users\you\Music'
+#   roots = ['C:\Users\you\Music']
 
 [general]
 port              = 8420
