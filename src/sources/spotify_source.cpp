@@ -318,13 +318,16 @@ void SpotifySource::start_pipe_locked() {
     const std::wstring ff = ffmpeg_path_.empty() ? std::wstring{L"ffmpeg"}
                                                  : ffmpeg_path_.wstring();
     const auto cache = cfg_.cache_dir.wstring();
+    const auto tmp_dir = (cfg_.cache_dir / L"tmp").wstring();
 
-    std::wstring spot_cmd = quote(spot) + 
+    std::wstring spot_cmd = quote(spot) +
                             L" --name \"FH6 Universal Radio\"" +
                             L" --bitrate 320" +
                             L" --backend pipe" +
                             L" --initial-volume 100" +
-                            L" --cache " + quote(cache);
+                            L" --cache " + quote(cache) +
+                            L" --tmp " + quote(tmp_dir) +
+                            L" --disable-audio-cache";
 
     // librespot defaults to 44100Hz s16le. We must resample to 48000Hz for FH6.
     // added flags to disable FFmpeg internal buffering for perfect UI sync
