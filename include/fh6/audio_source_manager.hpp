@@ -24,7 +24,8 @@ public:
     // Pulls a source out. If it was active, ring is drained + active cleared.
     std::unique_ptr<IAudioSource> unregister_source(std::string_view name);
 
-    // Hot-swap: pause old, drain ring, start new. False if name unknown.
+    // Hot-swap: stop old (reaping its subprocess tree), drain ring, start new.
+    // False if name unknown.
     bool switch_to(std::string_view name);
 
     IAudioSource* active() const noexcept { return active_.load(std::memory_order_acquire); }

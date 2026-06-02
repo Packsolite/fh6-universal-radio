@@ -42,7 +42,7 @@ bool AudioSourceManager::switch_to(std::string_view name) {
     if (prev == next) return true;
 
     if (prev) {
-        prev->pause();
+        prev->stop();
     }
     ring_.drain();
     next->play();
