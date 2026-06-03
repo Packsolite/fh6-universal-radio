@@ -1,6 +1,7 @@
 #include "fh6/subprocess.hpp"
 
 #include <format>
+#include <tlhelp32.h>
 
 namespace fh6::subprocess {
 
@@ -106,6 +107,15 @@ HANDLE open_stderr_log() {
     return h == INVALID_HANDLE_VALUE ? open_nul(GENERIC_WRITE) : h;
 }
 
+const wchar_t* safe_spawn_cwd() {
+    static const std::wstring dir = [] {
+        wchar_t buf[MAX_PATH];
+        UINT n = GetSystemDirectoryW(buf, MAX_PATH);
+        return (n > 0 && n < MAX_PATH) ? std::wstring{buf, n} : std::wstring{};
+    }();
+    return dir.empty() ? nullptr : dir.c_str();
+}
+
 HANDLE create_kill_on_close_job() {
     HANDLE job = CreateJobObjectW(nullptr, nullptr);
     if (!job) return nullptr;
@@ -132,7 +142,8 @@ HANDLE spawn_in_job(HANDLE job, const std::wstring& cmd, HANDLE stdin_h, HANDLE 
     auto launch = [&] {
         mut = cmd; // CreateProcessW may mutate the buffer; reset for the retry.
         return CreateProcessW(nullptr, mut.data(), nullptr, nullptr, TRUE,
-                              CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, nullptr, &si, &pi) != 0;
+                              CREATE_NO_WINDOW | CREATE_SUSPENDED, nullptr, safe_spawn_cwd(), &si,
+                              &pi) != 0;
     };
     if (!launch()) {
         // First attempt missed the binary. If it looks like a stale-PATH miss
@@ -156,6 +167,112 @@ HANDLE spawn_in_job(HANDLE job, const std::wstring& cmd, HANDLE stdin_h, HANDLE 
     ResumeThread(pi.hThread);
     CloseHandle(pi.hThread);
     return pi.hProcess;
+}
+
+std::string drain_to_eof(HANDLE pipe, std::size_t max_bytes) {
+    std::string out;
+    char buf[1 << 16];
+    DWORD got = 0;
+    // Read to EOF even past the cap so the writer never blocks on a full pipe;
+    // bytes beyond max_bytes are dropped.
+    while (ReadFile(pipe, buf, sizeof(buf), &got, nullptr) && got > 0) {
+        if (max_bytes == 0) {
+            out.append(buf, got);
+        } else if (out.size() < max_bytes) {
+            const std::size_t room = max_bytes - out.size();
+            out.append(buf, got < room ? got : room);
+        }
+    }
+    return out;
+}
+
+std::string capture_output(const std::wstring& cmd, bool capture_stderr, std::size_t max_bytes) {
+    HANDLE job = create_kill_on_close_job();
+    if (!job) return {};
+
+    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+    HANDLE rd = nullptr, wr = nullptr;
+    if (!CreatePipe(&rd, &wr, &sa, 1 << 16)) {
+        CloseHandle(job);
+        return {};
+    }
+    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+
+    // Capture the requested stream via wr; the other goes to NUL (stdout) or the
+    // shared stderr log (stderr).
+    HANDLE nul_in   = open_nul(GENERIC_READ);
+    HANDLE off_band = capture_stderr ? open_nul(GENERIC_WRITE) : open_stderr_log();
+    HANDLE proc     = spawn_in_job(job, cmd, nul_in, capture_stderr ? off_band : wr,
+                                   capture_stderr ? wr : off_band);
+    CloseHandle(wr);
+    if (nul_in) CloseHandle(nul_in);
+    if (off_band) CloseHandle(off_band);
+    if (!proc) {
+        CloseHandle(rd);
+        CloseHandle(job);
+        return {};
+    }
+
+    std::string out = drain_to_eof(rd, max_bytes);
+    CloseHandle(rd);
+    CloseHandle(proc);
+    CloseHandle(job); // KILL_ON_JOB_CLOSE reaps the child if it hasn't exited
+    return out;
+}
+
+namespace {
+
+// Freeze every thread of `pid`. Called before we enumerate and terminate a
+// subtree so the target (a PyInstaller yt-dlp can fork faster than we walk)
+// cannot spawn new children mid-traversal, nor recycle a just-reaped PID.
+void suspend_process(DWORD pid) {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+    THREADENTRY32 te{};
+    te.dwSize = sizeof(te);
+    for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te)) {
+        if (te.th32OwnerProcessID != pid) continue;
+        if (HANDLE th = OpenThread(THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID)) {
+            SuspendThread(th);
+            CloseHandle(th);
+        }
+    }
+    CloseHandle(snap);
+}
+
+} // namespace
+
+void kill_process_tree(DWORD pid) {
+    // Suspend first, then walk the snapshot we captured of its (now-frozen)
+    // children before terminating it. The residual PID-reuse window at the very
+    // leaf is inherent to PID-based termination and unavoidable.
+    suspend_process(pid);
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe{};
+        pe.dwSize = sizeof(pe);
+        for (BOOL ok = Process32FirstW(snap, &pe); ok; ok = Process32NextW(snap, &pe)) {
+            if (pe.th32ParentProcessID == pid) kill_process_tree(pe.th32ProcessID);
+        }
+        CloseHandle(snap);
+    }
+
+    if (HANDLE proc = OpenProcess(PROCESS_TERMINATE, FALSE, pid)) {
+        TerminateProcess(proc, 1);
+        CloseHandle(proc);
+    }
+}
+
+void reap(HANDLE& proc) noexcept {
+    if (!proc) return;
+    if (DWORD pid = GetProcessId(proc)) {
+        kill_process_tree(pid);
+    } else {
+        TerminateProcess(proc, 1); // PID lookup failed -- terminate just this one
+    }
+    CloseHandle(proc);
+    proc = nullptr;
 }
 
 std::string describe_launch_failure(const std::wstring& bin, DWORD ec, bool from_config) {

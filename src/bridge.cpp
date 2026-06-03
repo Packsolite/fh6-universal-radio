@@ -15,9 +15,11 @@
 #include "fh6/sources/youtube_music_source.hpp"
 #include "fh6/sources/jellyfin_source.hpp"
 #include "fh6/sources/spotify_source.hpp"
+#include "fh6/worker/worker_client.hpp"
 
 #include <windows.h>
 #include <array>
+#include <cwctype>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -34,6 +36,20 @@ std::filesystem::path module_directory(HMODULE self) {
     DWORD n = GetModuleFileNameW(self, buf, MAX_PATH);
     if (n == 0 || n >= MAX_PATH) return {};
     return std::filesystem::path{buf}.parent_path();
+}
+
+bool host_is_game(const std::filesystem::path& dll_dir) {
+    wchar_t buf[MAX_PATH];
+    DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
+    if (n == 0 || n >= MAX_PATH) return false;
+    const std::filesystem::path exe{std::wstring_view{buf, n}};
+
+    std::error_code ec;
+    if (!std::filesystem::equivalent(exe.parent_path(), dll_dir, ec)) return false;
+
+    std::wstring name = exe.filename().wstring();
+    for (wchar_t& c : name) c = static_cast<wchar_t>(std::towlower(c));
+    return name != L"gamelaunchhelper.exe";
 }
 
 SpotifyConfig anchor_spotify(SpotifyConfig sp, const std::filesystem::path& data_dir) {
@@ -90,7 +106,15 @@ bool verify_ui_credits(const std::filesystem::path& ui_dir) {
 } // namespace
 
 void run_bridge(HMODULE self) noexcept {
-    const auto dir      = module_directory(self);
+    const auto dir = module_directory(self);
+    if (!host_is_game(dir)) return; // never spawn a bridge outside the game itself
+
+    if (HANDLE guard = CreateMutexW(nullptr, TRUE, L"Local\\fh6-universal-radio-bridge");
+        guard && GetLastError() == ERROR_ALREADY_EXISTS) {
+        CloseHandle(guard);
+        return;
+    }
+
     const auto data_dir = dir / "fh6-radio";
     std::error_code ec;
     std::filesystem::create_directories(data_dir, ec);
@@ -122,26 +146,42 @@ void run_bridge(HMODULE self) noexcept {
 
     DependencyManager deps{data_dir / "bin"};
 
+    // Worker process: delegates CreateProcess calls to a small external exe
+    // so the fork() Wine performs is cheap (~5 MB) instead of copying the
+    // game's multi-GB page table.  Falls back to direct spawn if absent.
+    worker::WorkerClient worker;
+    {
+        auto worker_exe = data_dir / "fh6-radio-worker.exe";
+        if (!std::filesystem::exists(worker_exe))
+            worker_exe = dir / "fh6-radio" / "fh6-radio-worker.exe";
+        if (worker.start(worker_exe))
+            log::info("[bridge] worker process started");
+        else
+            log::warn("[bridge] worker process unavailable -- falling back to direct spawn");
+    }
+
     // Register/unregister sources to match the enabled flags. Called at
     // startup and on every config change so toggling enabled adds/removes
     // the dashboard tile live, without a game restart.
-    auto sync_sources = [&mgr, &data_dir](const Config& c) {
+    auto sync_sources = [&mgr, &data_dir, &worker](const Config& c) {
         if (c.local_files.enabled && !mgr.find("local_files")) {
             auto src = std::make_unique<sources::LocalFileSource>(
-                c.local_files, c.general.ffmpeg_path, data_dir / "local_index.json");
+                c.local_files, c.general.ffmpeg_path, data_dir / "local_index.json", &worker);
             if (src->initialize()) mgr.register_source(std::move(src));
         } else if (!c.local_files.enabled && mgr.find("local_files")) {
             mgr.unregister_source("local_files");
         }
         if (c.youtube_music.enabled && !mgr.find("youtube_music")) {
             auto src = std::make_unique<sources::YouTubeMusicSource>(c.youtube_music,
-                                                                     c.general.ffmpeg_path);
+                                                                     c.general.ffmpeg_path,
+                                                                     &worker);
             if (src->initialize()) mgr.register_source(std::move(src));
         } else if (!c.youtube_music.enabled && mgr.find("youtube_music")) {
             mgr.unregister_source("youtube_music");
         }
         if (c.jellyfin.enabled && !mgr.find("jellyfin")) {
-            auto src = std::make_unique<sources::JellyfinSource>(c.jellyfin, c.general.ffmpeg_path);
+            auto src = std::make_unique<sources::JellyfinSource>(c.jellyfin, c.general.ffmpeg_path,
+                                                                  &worker);
             if (src->initialize()) mgr.register_source(std::move(src));
         } else if (!c.jellyfin.enabled && mgr.find("jellyfin")) {
             mgr.unregister_source("jellyfin");

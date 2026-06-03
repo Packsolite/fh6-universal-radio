@@ -44,6 +44,10 @@ if [ ! -f "$game/fh6-radio/config.toml" ]; then
     printf '\033[33m  + fh6-radio/config.toml  (seeded from example)\033[0m\n'
 fi
 
+if [ -f "$dist/fh6-radio/fh6-radio-worker.exe" ]; then
+    backup_and_copy "$dist/fh6-radio/fh6-radio-worker.exe" "$game/fh6-radio/fh6-radio-worker.exe"
+fi
+
 if [ "$skip_media" != "--skip-media" ]; then
     if [ -d "$mdir" ]; then
         while IFS= read -r -d '' f; do

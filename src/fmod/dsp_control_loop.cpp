@@ -12,8 +12,6 @@ namespace {
 using namespace std::chrono_literals;
 constexpr auto kTick           = 20ms;
 constexpr auto kDiscoveryRetry = 5s;
-constexpr int kDiscoveryTries  = 120; // 10-minute budget; the radio system
-                                      // isn't wired up until well into launch.
 
 // Ticks of no read_callback progress (while the source is producing PCM)
 // before we conclude the game tore the radio channel down. 1s @ 20ms.
@@ -57,20 +55,16 @@ ControlLoop::~ControlLoop() {
 void ControlLoop::run(const std::stop_token& tok) {
     log::info("[ctrl] control loop started");
 
-    bool acquired = false;
-    for (int attempt = 0; attempt < kDiscoveryTries && !tok.stop_requested(); ++attempt) {
+    while (!tok.stop_requested()) {
         if (acquire_target()) {
-            acquired = true;
             break;
         }
         for (auto t = std::chrono::steady_clock::now() + kDiscoveryRetry;
              std::chrono::steady_clock::now() < t && !tok.stop_requested();)
             std::this_thread::sleep_for(kTick);
     }
-    if (!acquired) {
-        log::warn("[ctrl] discovery timed out; control loop exiting");
-        return;
-    }
+
+    if (tok.stop_requested()) return;
 
     // The radio HUD reads from the SampleProperties slots at a much lower
     // rate than the audio mixer. 4 Hz is more than enough and keeps the

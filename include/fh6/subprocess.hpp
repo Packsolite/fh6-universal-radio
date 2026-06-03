@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -26,10 +27,29 @@ std::filesystem::path stderr_log_path();
 // like yt-dlp's deno) when the last handle drops.
 HANDLE create_kill_on_close_job();
 
+const wchar_t* safe_spawn_cwd();
+
 // CREATE_SUSPENDED + AssignProcessToJobObject + ResumeThread so fast children
 // can't spawn descendants outside the job.
 HANDLE spawn_in_job(HANDLE job, const std::wstring& cmd, HANDLE stdin_h, HANDLE stdout_h,
                     HANDLE stderr_h);
+
+// Read a pipe to EOF. max_bytes caps the result (0 = unbounded); excess is read
+// and dropped so the writer never blocks.
+std::string drain_to_eof(HANDLE pipe, std::size_t max_bytes = 0);
+
+// Spawn cmd in a kill-on-close job and capture its stdout (or stderr, if
+// capture_stderr) to EOF, then reap it. Returns "" if the spawn failed.
+std::string capture_output(const std::wstring& cmd, bool capture_stderr = false,
+                           std::size_t max_bytes = 0);
+
+// Manually terminates a process and all its children.
+// Crucial for Wine/Proton where Job Objects often fail to reap children.
+void kill_process_tree(DWORD pid);
+
+// Terminate a process and its entire tree, then close and null the handle.
+// No-op when proc is null. Consolidates the teardown idiom every source uses.
+void reap(HANDLE& proc) noexcept;
 
 std::string describe_launch_failure(const std::wstring& bin, DWORD ec, bool from_config);
 

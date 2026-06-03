@@ -44,6 +44,11 @@ if (-not (Test-Path $cfg)) {
     Write-Host "  + fh6-radio\config.toml  (seeded from example)" -ForegroundColor Yellow
 }
 
+$workerExe = Join-Path $dist "fh6-radio\fh6-radio-worker.exe"
+if (Test-Path $workerExe) {
+    Backup-AndCopy $workerExe (Join-Path $dataDir "fh6-radio-worker.exe") | Out-Host
+}
+
 if (-not $SkipMedia -and (Test-Path $mdir)) {
     Get-ChildItem -Recurse -File $mdir | ForEach-Object {
         $rel = $_.FullName.Substring($mdir.Length + 1)
