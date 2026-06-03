@@ -163,9 +163,16 @@ std::string drain_to_eof(HANDLE pipe, std::size_t max_bytes) {
     std::string out;
     char buf[1 << 16];
     DWORD got = 0;
-    while ((max_bytes == 0 || out.size() < max_bytes) &&
-           ReadFile(pipe, buf, sizeof(buf), &got, nullptr) && got > 0)
-        out.append(buf, got);
+    // Read to EOF even past the cap so the writer never blocks on a full pipe;
+    // bytes beyond max_bytes are dropped.
+    while (ReadFile(pipe, buf, sizeof(buf), &got, nullptr) && got > 0) {
+        if (max_bytes == 0) {
+            out.append(buf, got);
+        } else if (out.size() < max_bytes) {
+            const std::size_t room = max_bytes - out.size();
+            out.append(buf, got < room ? got : room);
+        }
+    }
     return out;
 }
 
