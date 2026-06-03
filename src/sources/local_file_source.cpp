@@ -671,7 +671,7 @@ bool LocalFileSource::open_track_ffmpeg(Decoder& d, const std::filesystem::path&
     SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
     HANDLE rd = nullptr, wr = nullptr;
     if (!CreatePipe(&rd, &wr, &sa, 1 << 20)) return false;
-    SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
+    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
 
     HANDLE nul_in  = open_nul(GENERIC_READ);
     HANDLE err_log = open_stderr_log();

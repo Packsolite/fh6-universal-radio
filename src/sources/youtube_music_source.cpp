@@ -183,7 +183,7 @@ void YouTubeMusicSource::resolve_queue_locked() {
         SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
         HANDLE rd = nullptr, wr = nullptr;
         if (!CreatePipe(&rd, &wr, &sa, 1 << 16)) { CloseHandle(job); return; }
-        SetHandleInformation(rd, 0, HANDLE_FLAG_INHERIT);
+        SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
         HANDLE nul_in  = open_nul(GENERIC_READ);
         HANDLE err_log = open_stderr_log();
         HANDLE proc = spawn_in_job(job, cmd, nul_in, wr, err_log);
@@ -303,12 +303,12 @@ YouTubeMusicSource::spawn_pipe_locked(std::string_view url, std::size_t for_idx)
         bail();
         return nullptr;
     }
-    SetHandleInformation(ff_out_r, 0, HANDLE_FLAG_INHERIT);
+    SetHandleInformation(ff_out_r, HANDLE_FLAG_INHERIT, 0);
     if (!CreatePipe(&tl_out_r, &tl_out_w, &sa, 1 << 16)) {
         bail();
         return nullptr;
     }
-    SetHandleInformation(tl_out_r, 0, HANDLE_FLAG_INHERIT);
+    SetHandleInformation(tl_out_r, HANDLE_FLAG_INHERIT, 0);
 
     HANDLE nul_in  = open_nul(GENERIC_READ);
     HANDLE err_log = open_stderr_log();
