@@ -367,7 +367,11 @@ void SpotifySource::pump(RingBuffer& ring) {
     // non-blocking parse of track metadata
     if (p->err_pipe) {
         DWORD err_avail = 0;
-        while (PeekNamedPipe(p->err_pipe, nullptr, 0, nullptr, &err_avail, nullptr) &&
+        int safety = 0; // limit log reads to prevent audio thread starvation
+
+        // process a maximum of 16KB of logs per pump cycle
+        while (safety++ < 16 &&
+               PeekNamedPipe(p->err_pipe, nullptr, 0, nullptr, &err_avail, nullptr) &&
                err_avail > 0) {
             char buf[1024];
             DWORD to_read = std::min<DWORD>(err_avail, (DWORD)sizeof(buf));
@@ -613,6 +617,11 @@ void SpotifySource::pump(RingBuffer& ring) {
 
         auto want = std::min<std::size_t>(
             {static_cast<std::size_t>(avail), writable, kMaxBufferBytes - buffered, kPipeChunk});
+
+        // request whole stereo S16 frames (4 bytes) so we never write half a
+        // frame; the leftover unaligned bytes stay in the pipe for the next iteration.
+        want &= ~std::size_t{3};
+        if (!want) break;
 
         std::byte buf[kPipeChunk];
         DWORD got = 0;

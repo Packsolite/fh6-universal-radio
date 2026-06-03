@@ -101,7 +101,7 @@ Requires **CMake** and **llvm-mingw**. On Arch: `sudo pacman -S llvm-mingw cmake
 | New radio station doesn't show in-game | **Audio > Streamer Mode** is off. Turn it on, restart the game. |
 | Local files don't play | The active station has no folders, or its folders only hold unsupported formats. Add a folder in the dashboard's Local Files card. |
 | YouTube Music produces no audio | Check `%TEMP%\fh6-stderr.log` (helper-process stderr lands there). Usually expired cookies, or geo/format restrictions. |
-| Spotify device doesn't appear or won't play | Wait for `librespot` to finish downloading, confirm your phone/PC is on the same network, and that the account is Spotify Premium. Helper stderr lands in `%TEMP%\fh6-spotify-stderr.log`. |
+| Spotify device doesn't appear or won't play | Wait for `librespot` to finish downloading, confirm your phone/PC is on the same network, and that the account is Spotify Premium. |
 | External Audio plays in the background, not through the radio | You're capturing the same device the app plays on. Route the app's output to a **virtual audio cable** and select that cable as the **Capture device** (see [External audio](#external-audio)). |
 | External Audio has clicks / artifacts | Set the virtual cable to **48000 Hz** (2 ch). Other sample rates caused artifacts in testing. |
 
