@@ -201,6 +201,9 @@ json handle_spawn(const json& req) {
     // Build the chain: each command's stdout feeds the next command's stdin.
     // The last command's stdout goes to a named pipe for the DLL to read.
     HANDLE prev_read = nul_in; // first command reads from NUL
+    bool capture_stderr_meta = req.value("capture_stderr_meta", false);
+
+    json resp = {{"ok", true}};
 
     for (size_t i = 0; i < chain.size(); ++i) {
         bool is_last = (i == chain.size() - 1);
@@ -220,9 +223,22 @@ json handle_spawn(const json& req) {
         // child's stdin.
         if (is_last) SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
 
+        HANDLE cmd_err = err_log;
+        HANDLE err_rd = nullptr;
+        if (is_last && capture_stderr_meta) {
+            HANDLE err_wr = nullptr;
+            if (CreatePipe(&err_rd, &err_wr, &sa, 1 << 16)) {
+                SetHandleInformation(err_rd, HANDLE_FLAG_INHERIT, 0);
+                cmd_err = err_wr;
+            }
+        }
+
         std::wstring wcmd = widen(chain[i]);
-        HANDLE proc       = spawn_in_job(pl->job, wcmd, prev_read, wr, err_log);
+        HANDLE proc       = spawn_in_job(pl->job, wcmd, prev_read, wr, cmd_err);
         CloseHandle(wr);
+        if (is_last && capture_stderr_meta && cmd_err != err_log) {
+            CloseHandle(cmd_err);
+        }
 
         // Close the previous read-end now that the child inherited it (unless it
         // was nul_in, which we keep for the side command).
@@ -230,6 +246,7 @@ json handle_spawn(const json& req) {
 
         if (!proc) {
             CloseHandle(rd);
+            if (err_rd) CloseHandle(err_rd);
             if (nul_in) CloseHandle(nul_in);
             if (err_log) CloseHandle(err_log);
             return {{"ok", false}, {"error", "spawn failed for step " + std::to_string(i)}};
@@ -241,22 +258,37 @@ json handle_spawn(const json& req) {
             HANDLE np      = create_stream_pipe(pipe_name);
             if (np == INVALID_HANDLE_VALUE) {
                 CloseHandle(rd);
+                if (err_rd) CloseHandle(err_rd);
                 if (nul_in) CloseHandle(nul_in);
                 if (err_log) CloseHandle(err_log);
                 return {{"ok", false}, {"error", "CreateNamedPipe failed for pcm"}};
             }
+            
+            resp["pcm_pipe"] = narrow(pipe_name);
+
             pl->proxies_data.push_back(std::make_unique<ProxyData>(rd, np, std::move(pipe_name)));
             pl->proxies.emplace_back(proxy_thread_fn, pl->proxies_data.back().get());
+        
+            if (capture_stderr_meta && err_rd) {
+                auto meta_name = stream_pipe_name(g_token, id, L"meta");
+                HANDLE mnp     = create_stream_pipe(meta_name);
+                if (mnp != INVALID_HANDLE_VALUE) {
+                    resp["meta_pipe"] = narrow(meta_name);
+                    pl->proxies_data.push_back(
+                        std::make_unique<ProxyData>(err_rd, mnp, std::move(meta_name)));
+                    pl->proxies.emplace_back(proxy_thread_fn, pl->proxies_data.back().get());
+                } else {
+                    CloseHandle(err_rd);
+                }
+            }
         } else {
             prev_read = rd; // feed to next command's stdin
         }
     }
 
-    json resp = {{"ok", true}, {"pcm_pipe", narrow(stream_pipe_name(g_token, id, L"pcm"))}};
-
     // Optional side command (title resolver): its stdout goes to a separate
     // named pipe so the DLL can drain metadata independently.
-    if (req.contains("side_cmd")) {
+    if (req.contains("side_cmd") && !capture_stderr_meta) {
         auto side_u8 = req.at("side_cmd").get<std::string>();
         SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
         HANDLE srd = nullptr, swr = nullptr;

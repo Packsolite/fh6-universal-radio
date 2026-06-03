@@ -16,6 +16,7 @@
 #include "fh6/sources/jellyfin_source.hpp"
 #include "fh6/sources/spotify_source.hpp"
 #include "fh6/worker/worker_client.hpp"
+#include "fh6/sources/online_radio_source.hpp"
 
 #include <windows.h>
 #include <array>
@@ -190,6 +191,13 @@ void run_bridge(HMODULE self) noexcept {
         } else if (!c.jellyfin.enabled && mgr.find("jellyfin")) {
             mgr.unregister_source("jellyfin");
         }
+        if (c.online_radio.enabled && !mgr.find("online_radio")) {
+            auto src = std::make_unique<sources::OnlineRadioSource>(c.online_radio,
+                                                                    c.general.ffmpeg_path, &worker);
+            if (src->initialize()) mgr.register_source(std::move(src));
+        } else if (!c.online_radio.enabled && mgr.find("online_radio")) {
+            mgr.unregister_source("online_radio");
+        }
 
         if (c.external_audio.enabled && !mgr.find("external_audio")) {
             auto src = std::make_unique<sources::ExternalAudioSource>(c.external_audio);
@@ -280,6 +288,10 @@ void run_bridge(HMODULE self) noexcept {
         }
         if (auto* sp = dynamic_cast<sources::SpotifySource*>(mgr.find("spotify"))) {
             sp->set_config(anchor_spotify(c.spotify, data_dir), c.general.ffmpeg_path);
+        }
+        if (auto* rd = dynamic_cast<sources::OnlineRadioSource*>(mgr.find("online_radio"))) {
+            rd->set_ffmpeg_path(c.general.ffmpeg_path);
+            rd->set_config(c.online_radio);
         }
 
         for (auto* s : mgr.sources_snapshot()) s->set_playback_options(c.playback);

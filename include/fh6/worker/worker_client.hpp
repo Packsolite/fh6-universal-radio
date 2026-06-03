@@ -51,7 +51,8 @@ public:
     /// Spawn a chain of piped commands (e.g. yt-dlp | ffmpeg) with an
     /// optional side command whose stdout is exposed as meta_pipe.
     SpawnResult spawn_pipeline(const std::vector<std::wstring>& chain,
-                               const std::wstring& side_cmd = {});
+                               const std::wstring& side_cmd = {},
+                               bool capture_stderr_meta = false);
 
     /// Convenience: single command whose stdout is exposed as pcm_pipe.
     SpawnResult spawn_single(const std::wstring& cmd);

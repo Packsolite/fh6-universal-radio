@@ -135,6 +135,17 @@ Config load_config(const std::filesystem::path& path) {
     cfg.jellyfin.use_favorites = pick<bool>(jf, "use_favorites", cfg.jellyfin.use_favorites);
     cfg.jellyfin.shuffle       = pick<bool>(jf, "shuffle", cfg.jellyfin.shuffle);
 
+    const auto& or_sec       = section(root, "online_radio");
+    cfg.online_radio.enabled = pick<bool>(or_sec, "enabled", cfg.online_radio.enabled);
+    const int station_index =
+        pick<int>(or_sec, "default_station_index",
+                  static_cast<int>(cfg.online_radio.default_station_index));
+    cfg.online_radio.default_station_index = station_index < 0 ? 0u : static_cast<size_t>(station_index);
+    for (const auto& st : pick<std::vector<toml::value>>(or_sec, "stations", {})) {
+        cfg.online_radio.stations.push_back(
+            {pick<std::string>(st, "name", ""), pick<std::string>(st, "url", "")});
+    }
+
     const auto& ea             = section(root, "external_audio");
     cfg.external_audio.enabled = pick<bool>(ea, "enabled", cfg.external_audio.enabled);
     cfg.external_audio.endpoint_id =
@@ -329,6 +340,15 @@ void save_config(const std::filesystem::path& path, const Config& cfg) {
     e.kv("enabled", cfg.spotify.enabled);
     e.kv_path("librespot_path", cfg.spotify.librespot_path);
     e.kv_path("cache_dir", cfg.spotify.cache_dir);
+
+    e.header("online_radio");
+    e.kv("enabled", cfg.online_radio.enabled);
+    e.kv("default_station_index", (int64_t)cfg.online_radio.default_station_index);
+    for (const auto& st : cfg.online_radio.stations) {
+        e.array_header("online_radio.stations");
+        e.kv("name", st.name);
+        e.kv("url", st.url);
+    }
 
     e.header("audio");
     e.kv("output_gain", (double)cfg.audio.output_gain);
