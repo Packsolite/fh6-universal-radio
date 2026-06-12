@@ -238,6 +238,7 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     auto* active = bridge_.manager().active();
     if (!active) {
         prev_r10_ = prev_race_ = prev_race_restart_ = false;
+        paused_by_race_off_ = false;
         quick_skip_armed_                           = false;
         return;
     }
@@ -268,7 +269,8 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
             outcome = fired ? "restarted current track" : "could not restart current track";
         } else if (mode == "off") {
             active->pause();
-            fired   = true;
+            fired              = true;
+            paused_by_race_off_ = true;
             outcome = "paused playback";
         }
         if (fired) {
@@ -277,6 +279,14 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
         }
         last_race_event_ = now;
         log::info("[ctrl] race {} -- {}", restart_edge_in ? "restarted" : "started", outcome);
+    }
+
+    // --- raceEndResume (race_active falling edge) ---
+    const bool race_edge_out = !game.race_active && prev_race_;
+    if (race_edge_out && paused_by_race_off_) {
+        active->play();
+        paused_by_race_off_ = false;
+        log::info("[ctrl] race ended -- resuming playback");
     }
     prev_race_         = game.race_active;
     prev_race_restart_ = game.race_restart;
