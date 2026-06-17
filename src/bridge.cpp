@@ -17,6 +17,7 @@
 #include "fh6/sources/spotify_source.hpp"
 #include "fh6/worker/worker_client.hpp"
 #include "fh6/sources/online_radio_source.hpp"
+#include "fh6/sources/vanilla_radio_source.hpp"
 
 #include <windows.h>
 #include <array>
@@ -218,6 +219,12 @@ void run_bridge(HMODULE self) noexcept {
             if (src->initialize()) mgr.register_source(std::move(src));
         } else if (!c.spotify.enabled && mgr.find("spotify")) {
             mgr.unregister_source("spotify");
+        }
+        if (c.vanilla_radio.enabled && !mgr.find("vanilla_radio")) {
+            auto src = std::make_unique<sources::VanillaRadioSource>();
+            if (src->initialize()) mgr.register_source(std::move(src));
+        } else if (!c.vanilla_radio.enabled && mgr.find("vanilla_radio")) {
+            mgr.unregister_source("vanilla_radio");
         }
     };
 

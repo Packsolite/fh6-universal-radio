@@ -80,6 +80,13 @@ void ControlLoop::run(const std::stop_token& tok) {
         bridge_.retarget_if_needed();
         bridge_.manager().pump_once();
 
+        auto* active_src = bridge_.manager().active();
+        if (active_src && active_src->name() == "vanilla_radio") {
+            bridge_.set_mode(DSPMode::passthrough);
+        } else {
+            bridge_.set_mode(DSPMode::pcm);
+        }
+
         // Skip refreshing while the station is silenced (pause menu, rewind):
         // the HUD isn't shown, and freezing the value lets the dedup in
         // MetadataInjector swallow the resume so the game doesn't re-pop its
