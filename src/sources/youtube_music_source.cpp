@@ -91,7 +91,6 @@ const YouTubeStation* YouTubeMusicSource::active_station_locked() const noexcept
 }
 
 void YouTubeMusicSource::set_config(YouTubeMusicConfig cfg) {
-    bool rescan = false;
     {
         std::scoped_lock lk{mu_};
         const auto* old_st = active_station_locked();
@@ -108,15 +107,12 @@ void YouTubeMusicSource::set_config(YouTubeMusicConfig cfg) {
         std::string new_url = new_st ? new_st->url : "";
         
         if (old_url != new_url && target_url_.empty()) {
-            rescan = true;
+            discard_prefetch_locked();
+            stop_pipe_locked();
+            queue_.clear();
+            queue_idx_ = 0;
+            queue_built_for_.clear();
         }
-    }
-    if (rescan) {
-        std::scoped_lock lk{mu_};
-        queue_.clear();
-        queue_idx_ = 0;
-        queue_built_for_.clear();
-        discard_prefetch_locked();
     }
 }
 
@@ -125,10 +121,11 @@ void YouTubeMusicSource::set_active_station(std::string name) {
     if (cfg_.active_station == name && target_url_.empty()) return;
     cfg_.active_station = std::move(name);
     target_url_.clear(); // clear temporary cast target
+    discard_prefetch_locked();
+    stop_pipe_locked();
     queue_.clear();
     queue_idx_ = 0;
     queue_built_for_.clear();
-    discard_prefetch_locked();
 }
 
 std::size_t YouTubeMusicSource::station_count() const noexcept {
@@ -306,17 +303,13 @@ void YouTubeMusicSource::resolve_queue_locked() {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t'))
             line.pop_back();
         if (!line.empty() && line != "NA") {
-            auto tab = line.find('\t');
-            if (!line.empty() && line != "NA") {
-            auto tab = line.find('\t');
-            if (tab != std::string::npos) {
-                std::string id = line.substr(0, tab);
-                std::string title = line.substr(tab + 1);
+            const auto tab = line.find('\t');
+            const std::string id = tab == std::string::npos ? line : line.substr(0, tab);
+            if (!id.empty() && id != "NA") {
+                const std::string title =
+                    tab == std::string::npos ? std::string{} : line.substr(tab + 1);
                 queue_.push_back({watch_url_for_id(id), title, ""});
-            } else {
-                queue_.push_back({watch_url_for_id(line), "", ""});
             }
-        }
         }
         pos = (nl == std::string::npos) ? raw.size() : nl + 1;
     }

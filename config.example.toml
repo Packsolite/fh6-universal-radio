@@ -38,9 +38,9 @@ shuffle            = true
 
 # you can add as many stations as you want below. name + url are required; the
 # rest are filled in automatically when you save a station from the dashboard
-[[youtube_music.stations]]
-name = "My Playlist"
-url = ""
+#[[youtube_music.stations]]
+#name = "My Playlist"
+#url = ""
 
 [jellyfin]
 enabled            = false

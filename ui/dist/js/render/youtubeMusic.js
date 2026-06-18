@@ -204,6 +204,10 @@ export function createYoutubeMusic(main, ctx) {
     try {
       await api.putYoutubeStations(stations, name); 
       await api.activateYoutubeStation(name); 
+
+      await api.switchSource("youtube_music");
+      await api.transport("youtube_music", "play");
+
       activeStation = name;
       renderStations();
       toast(`On air: ${name}`);

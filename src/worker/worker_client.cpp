@@ -41,25 +41,32 @@ std::vector<wchar_t> build_environment_block(const std::vector<std::pair<std::ws
     std::map<std::wstring, std::wstring, WStringCmpI> env_map;
 
     // fetch current process environment
-    if (LPWCH curr_env = GetEnvironmentStringsW()) {
-        for (LPWCH p = curr_env; *p; ) {
-            std::wstring entry(p);
-            p += entry.length() + 1;
+    LPWCH curr_env = GetEnvironmentStringsW();
+    if (!curr_env) return {};
+    
+    for (LPWCH p = curr_env; *p; ) {
+        std::wstring entry(p);
+        p += entry.length() + 1;
 
-            if (entry.empty()) continue;
+        if (entry.empty()) continue;
 
-            // start searching for '=' after index 0 to correctly parse variables
-            size_t pos = entry.find(L'=', entry[0] == L'=' ? 1 : 0);
-            
-            if (pos != std::wstring::npos) {
-                env_map[entry.substr(0, pos)] = entry.substr(pos + 1);
-            }
+        // start searching for '=' after index 0 to correctly parse variables
+        size_t pos = entry.find(L'=', entry[0] == L'=' ? 1 : 0);
+        
+        if (pos != std::wstring::npos) {
+            env_map[entry.substr(0, pos)] = entry.substr(pos + 1);
         }
-        FreeEnvironmentStringsW(curr_env);
     }
+    FreeEnvironmentStringsW(curr_env);
 
     // apply overrides
     for (const auto& kv : overrides) {
+        if (kv.first.empty() || kv.first.find(L'=') != std::wstring::npos ||
+            kv.first.find(L'\0') != std::wstring::npos ||
+            kv.second.find(L'\0') != std::wstring::npos) {
+            log::warn("[worker] ignoring invalid environment override");
+            continue;
+        }
         env_map[kv.first] = kv.second;
     }
 
@@ -131,6 +138,11 @@ bool WorkerClient::start(const std::filesystem::path& worker_exe,
 
     // build the custom environment block
     std::vector<wchar_t> env_block = build_environment_block(env_overrides);
+    if (env_block.size() <= 2) {
+        log::error("[worker] failed to read inherited environment");
+        token_.clear();
+        return false;
+    }
 
     STARTUPINFOW si{};
     si.cb = sizeof(si);

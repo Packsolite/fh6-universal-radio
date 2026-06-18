@@ -76,7 +76,10 @@ public:
     std::string auth_instructions() const override;
     SourceCapabilities capabilities() const noexcept override { return {false, true, true}; }
 
-    bool shuffle() const noexcept { return cfg_.shuffle; }
+    bool shuffle() const {
+        std::scoped_lock lk{mu_};
+        return cfg_.shuffle;
+    }
 
 private:
     struct Pipe;
