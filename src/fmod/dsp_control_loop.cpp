@@ -320,7 +320,7 @@ void ControlLoop::push_metadata() noexcept {
 
     // if using vanilla radio, let the game handle its own native metadata
     // reset the injector cache so that when we swap to a custom source,
-    // it will ovrewrite whatever native metadata the game wrote in the meantime
+    // it will overwrite whatever native metadata the game wrote in the meantime
     if (a->name() == "vanilla_radio") {
         meta_.reset_cache();
         return;
