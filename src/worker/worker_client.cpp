@@ -46,10 +46,11 @@ std::vector<wchar_t> build_environment_block(const std::vector<std::pair<std::ws
             std::wstring entry(p);
             p += entry.length() + 1;
 
-            // skip hidden drive-letter variables that start with '='
-            if (entry.empty() || entry[0] == L'=') continue;
+            if (entry.empty()) continue;
 
-            size_t pos = entry.find(L'=');
+            // start searching for '=' after index 0 to correctly parse variables
+            size_t pos = entry.find(L'=', entry[0] == L'=' ? 1 : 0);
+            
             if (pos != std::wstring::npos) {
                 env_map[entry.substr(0, pos)] = entry.substr(pos + 1);
             }

@@ -284,9 +284,10 @@ void run_bridge(HMODULE self) noexcept {
             }
         }
         if (auto* yt = dynamic_cast<sources::YouTubeMusicSource*>(mgr.find("youtube_music"))) {
-            yt->set_shuffle(c.youtube_music.shuffle);
             yt->set_ffmpeg_path(c.general.ffmpeg_path);
+            yt->set_config(c.youtube_music); 
             yt->set_yt_dlp_path(c.youtube_music.yt_dlp_path);
+            yt->set_shuffle(c.youtube_music.shuffle);
         }
         if (auto* jf = dynamic_cast<sources::JellyfinSource*>(mgr.find("jellyfin"))) {
             jf->set_ffmpeg_path(c.general.ffmpeg_path);

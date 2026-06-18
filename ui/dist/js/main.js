@@ -12,6 +12,7 @@ import { createDeps } from "./render/deps.js";
 import { createExternalAudio } from "./render/externalAudio.js";
 import { createLocalFiles } from "./render/localFiles.js";
 import { createOnlineRadio } from "./render/onlineRadio.js";
+import { createYoutubeMusic } from "./render/youtubeMusic.js";
 
 let state = null;
 let cfg = null;
@@ -32,9 +33,7 @@ const refs = {
   sources: $("#sources"),
   sourceCard: $("#source-card"),
   outputCard: $("#output-card"),
-  ytCard: $("#yt-cast-card"),
   jfCard: $("#jf-cast-card"),
-  ytShuffle: $("#yt-shuffle"),
   drawer: $("#drawer"),
   scrim: $("#scrim"),
   form: $("#settings-form"),
@@ -45,7 +44,6 @@ $("#open-settings").innerHTML = icons.gear;
 $("#close-settings").innerHTML = icons.close;
 $("#t-prev").innerHTML = icons.prev;
 $("#t-next").innerHTML = icons.next;
-$("#yt-shuffle").innerHTML = icons.shuffle;
 
 const mainEl = $("main");
 
@@ -80,6 +78,16 @@ const localFiles = createLocalFiles(mainEl, {
 });
 
 const onlineRadio = createOnlineRadio(mainEl, {
+  getState: () => state,
+  getConfig: () => cfg,
+  onSaved: async () => {
+    cfg = await api.getConfig().catch(() => cfg);
+    state = await api.getState().catch(() => state);
+    render();
+  },
+});
+
+const youtubeMusic = createYoutubeMusic(mainEl, {
   getState: () => state,
   getConfig: () => cfg,
   onSaved: async () => {
@@ -142,6 +150,7 @@ function render() {
   externalAudio.render();
   localFiles.render();
   onlineRadio.render();
+  youtubeMusic.render();
 
   refs.sourceCard.hidden = false;
   refs.outputCard.hidden = !state.sources?.active;
@@ -149,41 +158,12 @@ function render() {
   const available = state.sources?.available || [];
   const active = state.sources?.active;
   // Source-specific cards only show while that source is on air.
-  refs.ytCard.hidden = active !== "youtube_music";
   refs.jfCard.hidden = active !== "jellyfin";
-  const shuffleOn = !!available.find(s => s.name === "youtube_music")?.details?.shuffle;
-  refs.ytShuffle.classList.toggle("toggled", shuffleOn);
-  refs.ytShuffle.setAttribute("aria-pressed", String(shuffleOn));
 }
 
 $("#t-play").addEventListener("click", () => transport("play"));
 $("#t-next").addEventListener("click", () => transport("next"));
 $("#t-prev").addEventListener("click", () => transport("previous"));
-
-$("#yt-cast").addEventListener("submit", async e => {
-  e.preventDefault();
-  const url = $("#yt-url").value.trim();
-  if (!url) return;
-  try {
-    await api.castYoutube(url);
-    $("#yt-url").value = "";
-    toast("Casting…");
-  } catch (err) {
-    toast(err.message, true);
-  }
-});
-
-$("#yt-shuffle").addEventListener("click", async () => {
-  const yt = state?.sources?.available?.find(s => s.name === "youtube_music");
-  if (!yt) return;
-  const shuffle = !yt.details?.shuffle;
-  try {
-    await api.shuffleYoutube(shuffle);
-    toast(shuffle ? "Shuffle on" : "Shuffle off");
-  } catch (err) {
-    toast(err.message, true);
-  }
-});
 
 $("#jf-cast").addEventListener("submit", async e => {
   e.preventDefault();
@@ -221,6 +201,7 @@ $("#save-config").addEventListener("click", async () => {
     externalAudio.invalidate();
     localFiles.invalidate();
     onlineRadio.invalidate();
+    youtubeMusic.invalidate();
     state = await api.getState().catch(() => state);
     render();
     toast("Saved");
@@ -236,6 +217,7 @@ $("#reload-config").addEventListener("click", async () => {
     externalAudio.invalidate();
     localFiles.invalidate();
     onlineRadio.invalidate();
+    youtubeMusic.invalidate();
     renderSettings(refs.form, cfg);
     render();
     toast("Reloaded from disk");
