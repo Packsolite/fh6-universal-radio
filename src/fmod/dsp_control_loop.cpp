@@ -256,7 +256,7 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
         prev_r10_ = prev_race_ = prev_race_restart_ = false;
         paused_by_race_off_ = false;
         first_connection_   = true;
-        quick_skip_armed_                           = false;
+        quick_skip_armed_   = false;
         return;
     }
 
@@ -295,12 +295,12 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
             outcome = fired ? "restarted current track" : "could not restart current track";
         } else if (mode == "off") {
             if (active->playback_state() == PlaybackState::playing) {
-                active->pause();
+                active->stop();
                 fired               = true;
                 paused_by_race_off_ = true;
-                outcome = "paused playback";
+                outcome             = "stopped playback";
             } else {
-                outcome = "skipped pause (not playing)";
+                outcome = "skipped stop (not playing)";
             }
         }
         if (fired) {
