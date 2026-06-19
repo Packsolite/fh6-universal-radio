@@ -299,15 +299,16 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     // dynamically load XInput
     typedef DWORD(WINAPI* XInputGetState_t)(DWORD, XINPUT_STATE*);
     static XInputGetState_t pXInputGetState = nullptr;
-    static bool xinput_tried = false;
-
-    if (!xinput_tried) {
+    static std::once_flag xinput_once;
+    std::call_once(xinput_once, [] {
         HMODULE hXInput = LoadLibraryW(L"xinput1_4.dll");
         if (!hXInput) hXInput = LoadLibraryW(L"xinput9_1_0.dll");
         if (!hXInput) hXInput = LoadLibraryW(L"xinput1_3.dll");
-        if (hXInput) pXInputGetState = (XInputGetState_t)GetProcAddress(hXInput, "XInputGetState");
-        xinput_tried = true;
-    }
+        if (hXInput) {
+            pXInputGetState =
+                reinterpret_cast<XInputGetState_t>(GetProcAddress(hXInput, "XInputGetState"));
+        }
+    });
 
     XINPUT_STATE xstate{};
     bool pad_connected = pXInputGetState && (pXInputGetState(0, &xstate) == ERROR_SUCCESS);

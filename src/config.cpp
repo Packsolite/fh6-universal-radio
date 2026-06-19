@@ -194,6 +194,8 @@ Config load_config(const std::filesystem::path& path) {
         static_cast<float>(pick<double>(au, "output_gain", cfg.audio.output_gain));
 
     const auto& pb = section(root, "playback");
+    const bool legacy_quick_station_skip =
++        pick<bool>(pb, "quick_station_skip", false);
     {
         auto rs = pick<std::string>(pb, "race_start_playback", cfg.playback.race_start_playback);
         if (rs == "next" || rs == "restart" || rs == "ignore")
@@ -226,6 +228,15 @@ Config load_config(const std::filesystem::path& path) {
     cfg.playback.hotkeys.pad_source = pick<int>(hk, "pad_source", cfg.playback.hotkeys.pad_source);
     cfg.playback.hotkeys.kb_playpause = pick<int>(hk, "kb_playpause", cfg.playback.hotkeys.kb_playpause);
     cfg.playback.hotkeys.pad_playpause = pick<int>(hk, "pad_playpause", cfg.playback.hotkeys.pad_playpause);
+
+    const bool any_hotkey_bound =
+        cfg.playback.hotkeys.kb_skip || cfg.playback.hotkeys.pad_skip ||
+        cfg.playback.hotkeys.kb_source || cfg.playback.hotkeys.pad_source ||
+        cfg.playback.hotkeys.kb_playpause || cfg.playback.hotkeys.pad_playpause;
+    if (legacy_quick_station_skip && !any_hotkey_bound) {
+        cfg.playback.hotkeys.kb_skip = 0x9999; // legacy quick-skip sentinel
+        cfg.playback.hotkeys.pad_skip = 0x9999; // legacy quick-skip sentinel
+    }
 
     return cfg;
 }
