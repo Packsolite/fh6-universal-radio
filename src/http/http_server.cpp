@@ -240,12 +240,20 @@ json config_to_json(const Config& c) {
         {"playback",
          json{
              {"race_start_playback", c.playback.race_start_playback},
-             {"quick_station_skip", c.playback.quick_station_skip},
              {"volume_normalization", c.playback.volume_normalization},
              {"equalizer_enabled", c.playback.equalizer_enabled},
              {"equalizer_bands", c.playback.equalizer_bands},
              {"force_stereo_audio", c.playback.force_stereo_audio},
              {"prebuffer_next_track", c.playback.prebuffer_next_track},
+         }},
+        {"hotkeys",
+         json{
+             {"kb_skip", c.playback.hotkeys.kb_skip},
+             {"pad_skip", c.playback.hotkeys.pad_skip},
+             {"kb_source", c.playback.hotkeys.kb_source},
+             {"pad_source", c.playback.hotkeys.pad_source},
+             {"kb_playpause", c.playback.hotkeys.kb_playpause},
+             {"pad_playpause", c.playback.hotkeys.pad_playpause},
          }},
     };
 }
@@ -377,15 +385,14 @@ void apply_patch(Config& c, const json& j) {
         auto rs = pull<std::string>(*it, "race_start_playback", c.playback.race_start_playback);
         if (rs == "next" || rs == "restart" || rs == "ignore")
             c.playback.race_start_playback = std::move(rs);
-        c.playback.quick_station_skip =
-            pull(*it, "quick_station_skip", c.playback.quick_station_skip);
         c.playback.volume_normalization =
             pull(*it, "volume_normalization", c.playback.volume_normalization);
         c.playback.force_stereo_audio =
             pull(*it, "force_stereo_audio", c.playback.force_stereo_audio);
         c.playback.prebuffer_next_track =
             pull(*it, "prebuffer_next_track", c.playback.prebuffer_next_track);
-        c.playback.equalizer_enabled = pull(*it, "equalizer_enabled", c.playback.equalizer_enabled);
+        c.playback.equalizer_enabled = 
+            pull(*it, "equalizer_enabled", c.playback.equalizer_enabled);
         if (auto bands = it->find("equalizer_bands"); bands != it->end() && bands->is_array()) {
             for (std::size_t i = 0; i < c.playback.equalizer_bands.size() && i < bands->size();
                  ++i) {
@@ -395,6 +402,20 @@ void apply_patch(Config& c, const json& j) {
                 c.playback.equalizer_bands[i] = b;
             }
         }
+    }
+    if (auto it = j.find("hotkeys"); it != j.end()) {
+        c.playback.hotkeys.kb_skip = 
+            pull(*it, "kb_skip", c.playback.hotkeys.kb_skip);
+        c.playback.hotkeys.pad_skip = 
+            pull(*it, "pad_skip", c.playback.hotkeys.pad_skip);
+        c.playback.hotkeys.kb_source = 
+            pull(*it, "kb_source", c.playback.hotkeys.kb_source);
+        c.playback.hotkeys.pad_source = 
+            pull(*it, "pad_source", c.playback.hotkeys.pad_source);
+        c.playback.hotkeys.kb_playpause = 
+            pull(*it, "kb_playpause", c.playback.hotkeys.kb_playpause);
+        c.playback.hotkeys.pad_playpause = 
+            pull(*it, "pad_playpause", c.playback.hotkeys.pad_playpause);
     }
 }
 

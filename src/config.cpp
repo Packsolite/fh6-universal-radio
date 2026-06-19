@@ -199,8 +199,6 @@ Config load_config(const std::filesystem::path& path) {
         if (rs == "next" || rs == "restart" || rs == "ignore")
             cfg.playback.race_start_playback = std::move(rs);
     }
-    cfg.playback.quick_station_skip =
-        pick<bool>(pb, "quick_station_skip", cfg.playback.quick_station_skip);
     cfg.playback.volume_normalization =
         pick<bool>(pb, "volume_normalization", cfg.playback.volume_normalization);
     cfg.playback.equalizer_enabled =
@@ -220,6 +218,14 @@ Config load_config(const std::filesystem::path& path) {
             }
         }
     } catch (...) {}
+
+    const auto& hk = section(root, "hotkeys");
+    cfg.playback.hotkeys.kb_skip = pick<int>(hk, "kb_skip", cfg.playback.hotkeys.kb_skip);
+    cfg.playback.hotkeys.pad_skip = pick<int>(hk, "pad_skip", cfg.playback.hotkeys.pad_skip);
+    cfg.playback.hotkeys.kb_source = pick<int>(hk, "kb_source", cfg.playback.hotkeys.kb_source);
+    cfg.playback.hotkeys.pad_source = pick<int>(hk, "pad_source", cfg.playback.hotkeys.pad_source);
+    cfg.playback.hotkeys.kb_playpause = pick<int>(hk, "kb_playpause", cfg.playback.hotkeys.kb_playpause);
+    cfg.playback.hotkeys.pad_playpause = pick<int>(hk, "pad_playpause", cfg.playback.hotkeys.pad_playpause);
 
     return cfg;
 }
@@ -406,12 +412,19 @@ void save_config(const std::filesystem::path& path, const Config& cfg) {
 
     e.header("playback");
     e.kv("race_start_playback", cfg.playback.race_start_playback);
-    e.kv("quick_station_skip", cfg.playback.quick_station_skip);
     e.kv("volume_normalization", cfg.playback.volume_normalization);
     e.kv("equalizer_enabled", cfg.playback.equalizer_enabled);
     e.kv_floats("equalizer_bands", std::span<const float>{cfg.playback.equalizer_bands});
     e.kv("force_stereo_audio", cfg.playback.force_stereo_audio);
     e.kv("prebuffer_next_track", cfg.playback.prebuffer_next_track);
+
+    e.header("hotkeys");
+    e.kv("kb_skip", (int64_t)cfg.playback.hotkeys.kb_skip);
+    e.kv("pad_skip", (int64_t)cfg.playback.hotkeys.pad_skip);
+    e.kv("kb_source", (int64_t)cfg.playback.hotkeys.kb_source);
+    e.kv("pad_source", (int64_t)cfg.playback.hotkeys.pad_source);
+    e.kv("kb_playpause", (int64_t)cfg.playback.hotkeys.kb_playpause);
+    e.kv("pad_playpause", (int64_t)cfg.playback.hotkeys.pad_playpause);
 
     auto tmp  = path;
     tmp      += ".tmp";
