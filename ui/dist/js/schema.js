@@ -38,7 +38,6 @@ export const SCHEMA = [
       ["enabled", "Enabled", "checkbox"],
       ["cookies_path", "cookies.txt (optional)", "text"],
       ["yt_dlp_path", "yt-dlp path (optional)", "text"],
-      ["default_playlist", "Default playlist URL", "text"],
       ["shuffle", "Shuffle", "checkbox"],
     ],
   ],
