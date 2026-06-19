@@ -755,7 +755,7 @@ struct HttpServer::Impl {
         if (m == "POST" && p == "/api/source/local_files/play" && !req.body.empty()) {
             auto* lf = find_typed<sources::LocalFileSource>("local_files");
             if (!lf) return fail(404, "local_files not registered");
-            auto idx              = json::parse(req.body).value("index", std::size_t{0});
+            auto idx              = json::parse(req.body).at("index").get<std::size_t>();
             const bool was_active = (mgr.active() == lf);
             if (!lf->jump_to(idx)) return fail(400, "index out of range");
             if (was_active) mgr.ring().drain();
@@ -835,6 +835,7 @@ struct HttpServer::Impl {
             auto* yt = find_typed<sources::YouTubeMusicSource>("youtube_music");
             if (!yt) return fail(404, "youtube_music not registered");
             auto url              = json::parse(req.body).at("url").get<std::string>();
+            if (url.empty()) return fail(400, "url required");
             const bool was_active = (mgr.active() == yt);
             yt->stop();
             yt->set_target(std::move(url));
@@ -900,7 +901,7 @@ struct HttpServer::Impl {
         if (m == "POST" && p == "/api/source/youtube_music/play" && !req.body.empty()) {
             auto* yt = find_typed<sources::YouTubeMusicSource>("youtube_music");
             if (!yt) return fail(404, "youtube_music not registered");
-            auto idx              = json::parse(req.body).value("index", std::size_t{0});
+            auto idx              = json::parse(req.body).at("index").get<std::size_t>();
             const bool was_active = (mgr.active() == yt);
             if (!yt->jump_to(idx)) return fail(400, "index out of range");
             if (was_active) mgr.ring().drain();
