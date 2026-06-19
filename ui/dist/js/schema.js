@@ -115,7 +115,7 @@ export const SCHEMA = [
     "playback",
     "Playback",
     [
-      ["race_start_playback", "Race start", "select", ["next", "restart", "ignore"]],
+      ["race_start_playback", "Race start", "select", ["next", "restart", "ignore", "off"]],
       ["volume_normalization", "Normalize loudness", "checkbox"],
       ["equalizer_enabled", "Equalizer", "checkbox"],
       ["equalizer_bands", "Equalizer bands", "bands"],

@@ -18,7 +18,7 @@ struct HotkeysConfig {
 };
 
 struct PlaybackConfig {
-    std::string race_start_playback = "next"; // "next" | "restart" | "ignore"
+    std::string race_start_playback = "next"; // "next" | "restart" | "ignore" | "off"
     bool volume_normalization       = false;
     bool equalizer_enabled          = false;
     std::array<float, 5> equalizer_bands{}; // 60 / 250 / 1000 / 4000 / 12000 Hz, [-6, +6] dB
