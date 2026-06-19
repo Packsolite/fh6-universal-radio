@@ -294,7 +294,8 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
             fired   = active->restart_current();
             outcome = fired ? "restarted current track" : "could not restart current track";
         } else if (mode == "off") {
-            if (active->playback_state() == PlaybackState::playing) {
+            const auto st = active->playback_state();
+            if (st == PlaybackState::playing || st == PlaybackState::buffering) {
                 active->stop();
                 fired               = true;
                 paused_by_race_off_ = true;
