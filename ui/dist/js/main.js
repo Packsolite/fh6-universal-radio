@@ -161,6 +161,69 @@ function render() {
   refs.jfCard.hidden = active !== "jellyfin";
 }
 
+// --- BACKUP CONFIGURATION ---
+const backupBtn = document.getElementById("backup-config");
+if (backupBtn) {
+  backupBtn.addEventListener("click", async () => {
+    try {
+      const config = await api.getConfig();
+
+      const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+
+      const dateStr = new Date().toISOString().split("T")[0];
+      a.download = `fh6-radio-settings-${dateStr}.json`;
+
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast("Backup downloaded successfully");
+    } catch (err) {
+      console.error("Failed to backup config:", err);
+      toast("Failed to backup settings.", true);
+    }
+  });
+}
+
+// --- RESTORE CONFIGURATION ---
+const restoreBtn = document.getElementById("restore-config");
+const restoreFile = document.getElementById("restore-file");
+
+if (restoreBtn && restoreFile) {
+  restoreBtn.addEventListener("click", () => restoreFile.click());
+
+  restoreFile.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const patch = JSON.parse(text);
+
+      cfg = await api.putConfig(patch);
+
+      externalAudio.invalidate();
+      localFiles.invalidate();
+      onlineRadio.invalidate();
+      youtubeMusic.invalidate();
+      renderSettings(refs.form, cfg);
+      state = await api.getState().catch(() => state);
+      render();
+      
+      toast("Settings restored successfully!");
+    } catch (err) {
+      console.error("Failed to restore config:", err);
+      toast("Failed to restore settings. Invalid JSON file.", true);
+    } finally {
+      e.target.value = ""; 
+    }
+  });
+}
+
 $("#t-play").addEventListener("click", () => transport("play"));
 $("#t-next").addEventListener("click", () => transport("next"));
 $("#t-prev").addEventListener("click", () => transport("previous"));

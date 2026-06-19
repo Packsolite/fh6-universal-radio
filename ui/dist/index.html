@@ -110,8 +110,16 @@
       </div>
       <form id="settings-form" class="drawer-body"></form>
       <div class="drawer-foot">
-        <button class="btn ghost" id="reload-config" type="button">Reload from disk</button>
-        <button class="btn filled" id="save-config" type="button">Save</button>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn ghost" id="backup-config" type="button" title="Download settings backup">Backup</button>
+          <button class="btn ghost" id="restore-config" type="button" title="Restore settings from file">Restore</button>
+          <input type="file" id="restore-file" accept=".json" style="display: none;" />
+        </div>
+        
+        <div style="display: flex; gap: 8px;">
+          <button class="btn ghost" id="reload-config" type="button" title="Reload from disk">Reload</button>
+          <button class="btn filled" id="save-config" type="button">Save</button>
+        </div>
       </div>
     </aside>
     <div class="scrim" id="scrim" hidden></div>
