@@ -259,7 +259,7 @@ void YouTubeMusicSource::resolve_queue_locked() {
 
     // Playlist URL: enumerate IDs via --flat-playlist.
     const auto yt  = cfg_.yt_dlp_path.empty() ? L"yt-dlp" : cfg_.yt_dlp_path.wstring();
-    std::wstring cmd = quote(yt) + L" --no-warnings --flat-playlist --skip-download "
+    std::wstring cmd = quote(yt) + L" --ignore-config --no-warnings --flat-playlist --skip-download "
                                    L"--encoding UTF-8 "
                                    L"--print \"%(id)s\t%(title)s\" ";
     if (!cfg_.cookies_path.empty())
@@ -345,7 +345,8 @@ YouTubeMusicSource::spawn_pipe_locked(std::string_view url, std::size_t for_idx)
     const auto yt = cfg_.yt_dlp_path.empty() ? L"yt-dlp" : cfg_.yt_dlp_path.wstring();
     const auto ff = ffmpeg_path_.empty() ? L"ffmpeg" : ffmpeg_path_.wstring();
 
-    std::wstring yt_cmd = quote(yt) + L" --no-warnings --no-progress "
+    std::wstring yt_cmd = quote(yt) + L" --ignore-config --no-warnings --no-progress "
+                                      L"--no-write-thumbnail "
                                       L"--format bestaudio/best --no-playlist -o - ";
     if (!cfg_.cookies_path.empty())
         yt_cmd += L"--cookies " + quote(cfg_.cookies_path.wstring()) + L" ";
@@ -356,7 +357,8 @@ YouTubeMusicSource::spawn_pipe_locked(std::string_view url, std::size_t for_idx)
         ff_cmd += L"-af loudnorm=I=-14:TP=-2:LRA=11 ";
     ff_cmd += L"-acodec pcm_s16le -ar 48000 -ac 2 pipe:1";
 
-    std::wstring tl_cmd = quote(yt) + L" --skip-download --no-warnings --no-playlist "
+    std::wstring tl_cmd = quote(yt) + L" --ignore-config --skip-download --no-warnings --no-playlist "
+                                      L"--no-write-thumbnail "
                                       L"--encoding UTF-8 "
                                       L"--print \"%(title)s\" "
                                       L"--print \"%(uploader)s\" "
