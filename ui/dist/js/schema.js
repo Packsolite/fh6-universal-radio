@@ -9,6 +9,37 @@ export const SOURCE_SECTIONS = [
   ["vanilla_radio", "Vanilla Radio"],
 ];
 
+// hotkeys
+const KB_KEYS = [
+  [0, "None"],
+  [0x21, "Page Up"],
+  [0x22, "Page Down"],
+  [0x24, "Home"],
+  [0x23, "End"],
+  [0x78, "F9"],
+  [0x79, "F10"],
+  [0x9999, "Double-Tap Radio Change"]
+];
+
+const PAD_BUTTONS = [
+  [0, "None"],
+  
+  // single unbound buttons
+  [0x0100, "Left Bumper (LB)"],
+  [0x4000, "X Button"],
+  [0x2000, "B Button"],
+  [0x0040, "Left Stick Click (LS)"],
+  
+  // custom combos (LB / X / B)
+  [0x4100, "LB + X"],
+  [0x2100, "LB + B"],
+  [0x0140, "LB + LS"],
+  [0x6000, "X + B"],
+  [0x6100, "LB + X + B"],
+
+  [0x9999, "Double-Tap Radio Change"]
+];
+
 // [field, label, type, ...args]. type: checkbox | text | number | select | bands.
 export const SCHEMA = [
   [
@@ -38,7 +69,6 @@ export const SCHEMA = [
       ["enabled", "Enabled", "checkbox"],
       ["cookies_path", "cookies.txt (optional)", "text"],
       ["yt_dlp_path", "yt-dlp path (optional)", "text"],
-      ["shuffle", "Shuffle", "checkbox"],
     ],
   ],
   [
@@ -49,9 +79,6 @@ export const SCHEMA = [
       ["server_url", "Server URL", "text"],
       ["user_id", "User ID", "text"],
       ["api_key", "API Key", "text"],
-      ["default_playlist", "Default Playlist", "text"],
-      ["use_favorites", "Use Favorites", "checkbox"],
-      ["shuffle", "Shuffle", "checkbox"],
     ],
   ],
   ["external_audio", "External Audio", [["enabled", "Enabled", "checkbox"]]],
@@ -86,8 +113,7 @@ export const SCHEMA = [
     "playback",
     "Playback",
     [
-      ["race_start_playback", "Race start", "select", ["next", "restart", "ignore"]],
-      ["quick_station_skip", "Quick station skip", "checkbox"],
+      ["race_start_playback", "Race start", "select", ["next", "restart", "ignore", "off"]],
       ["volume_normalization", "Normalize loudness", "checkbox"],
       ["equalizer_enabled", "Equalizer", "checkbox"],
       ["equalizer_bands", "Equalizer bands", "bands"],
@@ -95,4 +121,16 @@ export const SCHEMA = [
       ["prebuffer_next_track", "Pre-buffer next track", "checkbox"],
     ],
   ],
+  [
+    "hotkeys",
+    "Global Hotkeys",
+    [
+      ["kb_playpause", "Play / Pause (Keyboard)", "select-kv", KB_KEYS],
+      ["pad_playpause", "Play / Pause (Controller)", "select-kv", PAD_BUTTONS],
+      ["kb_skip", "Skip Track (Keyboard)", "select-kv", KB_KEYS],
+      ["pad_skip", "Skip Track (Controller)", "select-kv", PAD_BUTTONS],
+      ["kb_source", "Switch Source (Keyboard)", "select-kv", KB_KEYS],
+      ["pad_source", "Switch Source (Controller)", "select-kv", PAD_BUTTONS],
+    ]
+  ]
 ];

@@ -47,6 +47,14 @@ function buildField(section, spec, cfg) {
     ]);
   }
 
+  if (type === "select-kv") {
+    const options = (a || []).map(([val, lbl]) => el("option", { value: String(val), selected: Number(cur) === val }, lbl));
+    return el("div", { class: "field" }, [
+      el("label", { for: id }, label),
+      el("select", { id, dataset: { ...dataset, numeric: "1" } }, options),
+    ]);
+  }
+
   if (type === "bands") {
     const values = Array.isArray(cur) ? cur : [0, 0, 0, 0, 0];
     const rows = EQ_BAND_LABELS.map((bandLabel, i) => {
