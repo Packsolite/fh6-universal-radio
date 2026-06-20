@@ -85,6 +85,10 @@ private:
     bool paused_by_race_off_  = false;
     bool first_connection_    = true;
     bool stopped_by_race_off_ = false;
+    int combo_wait_ticks_ = 0;
+    bool pending_skip_ = false;
+    bool pending_src_ = false;
+    bool pending_pp_ = false;
     time_point last_source_cmd_{};
     time_point last_playpause_cmd_{};
     time_point last_r10_off_{};

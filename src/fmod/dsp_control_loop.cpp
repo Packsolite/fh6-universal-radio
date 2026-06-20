@@ -391,10 +391,51 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     }
     prev_r10_ = r10;
 
-    // execute skip track
-    bool trigger_skip = (skip_pressed && !prev_skip_hotkey_) || old_method_skip_fired_;
-    old_method_skip_fired_ = false;
+    // check for rising edges (button just pressed)
+    bool skip_edge = skip_pressed && !prev_skip_hotkey_;
+    bool src_edge  = src_pressed && !prev_source_hotkey_;
+    bool pp_edge   = pp_pressed && !prev_playpause_hotkey_;
 
+    // buffer
+    if (skip_edge) pending_skip_ = true;
+    if (src_edge)  pending_src_ = true;
+    if (pp_edge)   pending_pp_ = true;
+
+    bool trigger_skip = old_method_skip_fired_;
+    bool trigger_src  = old_method_src_fired_;
+    bool trigger_pp   = old_method_pp_fired_;
+    old_method_skip_fired_ = false;
+    old_method_src_fired_  = false;
+    old_method_pp_fired_   = false;
+
+    // track how long buttons have been held to allow combos to form
+    if (skip_pressed || src_pressed || pp_pressed) {
+        if (combo_wait_ticks_ >= 0) {
+            combo_wait_ticks_++;
+        }
+    } else {
+        combo_wait_ticks_ = 0;
+        pending_skip_ = pending_src_ = pending_pp_ = false;
+    }
+
+    // trigger combos immediately, delay single buttons by 3 ticks (~60ms) to prevent overlap
+    if (combo_wait_ticks_ == 3 || (max_bits > 1 && combo_wait_ticks_ > 0)) {
+        if (pending_pp_ && max_bits == static_cast<DWORD>(std::popcount(static_cast<uint32_t>(opts->hotkeys.pad_playpause)))) {
+            trigger_pp = true;
+        } else if (pending_src_ && max_bits == static_cast<DWORD>(std::popcount(static_cast<uint32_t>(opts->hotkeys.pad_source)))) {
+            trigger_src = true;
+        } else if (pending_skip_ && max_bits == static_cast<DWORD>(std::popcount(static_cast<uint32_t>(opts->hotkeys.pad_skip)))) {
+            trigger_skip = true;
+        }
+
+        // clear pending states
+        pending_skip_ = pending_src_ = pending_pp_ = false;
+        
+        // set to a negative number to prevent firing again until buttons are released
+        combo_wait_ticks_ = -9999; 
+    }
+
+    // execute skip track
     if (trigger_skip && (now - last_skip_cmd_ >= kSkipCommandCooldown)) {
         if (active->skip_next()) {
             ring.drain();
@@ -404,9 +445,6 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     }
     
     // execute source switch
-    bool trigger_src = (src_pressed && !prev_source_hotkey_) || old_method_src_fired_;
-    old_method_src_fired_ = false;
-
     if (trigger_src && (now - last_source_cmd_ >= 250ms)) {
         auto sources = bridge_.manager().sources_snapshot();
         if (!sources.empty()) {
@@ -422,9 +460,6 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     }
 
     // execute play/pause toggle
-    bool trigger_pp = (pp_pressed && !prev_playpause_hotkey_) || old_method_pp_fired_;
-    old_method_pp_fired_ = false;
-
     if (trigger_pp && (now - last_playpause_cmd_ >= 250ms)) {
         auto state = active->playback_state();
         if (state == PlaybackState::playing || state == PlaybackState::buffering) {
