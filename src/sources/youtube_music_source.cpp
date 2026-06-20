@@ -203,7 +203,7 @@ void YouTubeMusicSource::set_shuffle(bool shuffle) {
             auto start = queue_.begin() + static_cast<std::ptrdiff_t>(queue_idx_ + 1);
             if (start < queue_.end()) {
                 std::sort(start, queue_.end(), [](const auto& a, const auto& b) { 
-                    return a.url < b.url; 
+                    return a.original_index < b.original_index;
                 });
             }
         }
@@ -251,7 +251,8 @@ void YouTubeMusicSource::resolve_queue_locked() {
     queue_idx_ = 0;
 
     if (!is_playlist_url(effective_url)) {
-        queue_.push_back({effective_url, ""});
+        // add a 0 at the end for the original_index
+        queue_.push_back({effective_url, "", "", 0}); 
         queue_built_for_ = effective_url;
         return;
     }
@@ -296,6 +297,7 @@ void YouTubeMusicSource::resolve_queue_locked() {
         raw = drain_to_eof(rd);
         CloseHandle(rd); CloseHandle(proc); CloseHandle(job);
     }
+    std::size_t og_idx = 0;
     for (std::size_t pos = 0; pos < raw.size();) {
         auto nl   = raw.find('\n', pos);
         auto end  = (nl == std::string::npos) ? raw.size() : nl;
@@ -308,7 +310,9 @@ void YouTubeMusicSource::resolve_queue_locked() {
             if (!id.empty() && id != "NA") {
                 const std::string title =
                     tab == std::string::npos ? std::string{} : line.substr(tab + 1);
-                queue_.push_back({watch_url_for_id(id), title, ""});
+                
+                // add og_idx++ to the end of the push_back
+                queue_.push_back({watch_url_for_id(id), title, "", og_idx++}); 
             }
         }
         pos = (nl == std::string::npos) ? raw.size() : nl + 1;

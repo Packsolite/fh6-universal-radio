@@ -23,6 +23,7 @@ struct JellyfinTrack {
     std::string album;
     std::string image_tag; // ImageTags.Primary; empty when the item has no cover
     std::uint64_t duration_ms = 0;
+     std::size_t original_index = 0;
 };
 
 // Resolves a Jellyfin playlist over HTTP, then streams each item through

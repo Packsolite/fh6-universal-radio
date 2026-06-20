@@ -80,6 +80,7 @@ std::optional<std::vector<JellyfinTrack>> fetch_tracks(const JellyfinConfig& cfg
             return std::nullopt;
         }
         out.reserve(items->size());
+        std::size_t og_idx = 0;
         for (const auto& item : *items) {
             JellyfinTrack t;
             t.id = item.value("Id", "");
@@ -97,6 +98,7 @@ std::optional<std::vector<JellyfinTrack>> fetch_tracks(const JellyfinConfig& cfg
                 t.image_tag = it->value("Primary", "");
             if (auto r = item.find("RunTimeTicks"); r != item.end() && r->is_number_unsigned())
                 t.duration_ms = r->get<std::uint64_t>() / 10'000u; // 10000 ticks = 1 ms
+            t.original_index = og_idx++;
             out.push_back(std::move(t));
         }
     } catch (const std::exception& e) {
@@ -392,9 +394,18 @@ void JellyfinSource::set_config(JellyfinConfig cfg) {
             start_pipe_locked();
             if (pipe_) state_.store(PlaybackState::playing, std::memory_order_release);
         }
-    } else if (shuffle_flip && cfg_.shuffle) {
-        shuffle_range(queue_, current_idx_ + 1); // preserve the currently-playing track
-        discard_prefetch_locked();               // next-idx URL just changed
+    } else if (shuffle_flip) {
+        if (cfg_.shuffle) {
+            shuffle_range(queue_, current_idx_ + 1); // preserve the currently-playing track
+        } else {
+            auto start = queue_.begin() + static_cast<std::ptrdiff_t>(current_idx_ + 1);
+            if (start < queue_.end()) {
+                std::sort(start, queue_.end(), [](const auto& a, const auto& b) {
+                    return a.original_index < b.original_index;
+                });
+            }
+        }
+        discard_prefetch_locked(); // next-idx URL just changed
     }
 }
 
@@ -582,7 +593,9 @@ void JellyfinSource::set_shuffle(bool shuffle) {
     } else if (!shuffle && queue_.size() > 1) {
         auto start = queue_.begin() + static_cast<std::ptrdiff_t>(current_idx_ + 1);
         if (start < queue_.end()) {
-            std::sort(start, queue_.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
+            std::sort(start, queue_.end(), [](const auto& a, const auto& b) { 
+                return a.original_index < b.original_index;
+            });
         }
     }
 }
