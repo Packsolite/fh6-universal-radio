@@ -28,10 +28,12 @@ const PAD_BUTTONS = [
   [0x0100, "Left Bumper (LB)"],
   [0x4000, "X Button"],
   [0x2000, "B Button"],
+  [0x0040, "Left Stick Click (LS)"],
   
   // custom combos (LB / X / B)
   [0x4100, "LB + X"],
   [0x2100, "LB + B"],
+  [0x0140, "LB + LS"],
   [0x6000, "X + B"],
   [0x6100, "LB + X + B"],
 
