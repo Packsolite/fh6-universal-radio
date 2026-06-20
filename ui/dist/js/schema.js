@@ -67,7 +67,6 @@ export const SCHEMA = [
       ["enabled", "Enabled", "checkbox"],
       ["cookies_path", "cookies.txt (optional)", "text"],
       ["yt_dlp_path", "yt-dlp path (optional)", "text"],
-      ["shuffle", "Shuffle", "checkbox"],
     ],
   ],
   [
@@ -78,9 +77,6 @@ export const SCHEMA = [
       ["server_url", "Server URL", "text"],
       ["user_id", "User ID", "text"],
       ["api_key", "API Key", "text"],
-      ["default_playlist", "Default Playlist", "text"],
-      ["use_favorites", "Use Favorites", "checkbox"],
-      ["shuffle", "Shuffle", "checkbox"],
     ],
   ],
   ["external_audio", "External Audio", [["enabled", "Enabled", "checkbox"]]],

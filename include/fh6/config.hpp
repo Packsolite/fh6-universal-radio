@@ -71,14 +71,20 @@ struct YouTubeMusicConfig {
     bool shuffle = true;
 };
 
+struct JellyfinStation {
+    std::string name;
+    std::string playlist_id;
+    bool use_favorites = false;
+};
+
 struct JellyfinConfig {
     bool enabled = false;
     std::string server_url;
     std::string api_key;
     std::string user_id;
-    std::string default_playlist;
-    bool use_favorites = false;
-    bool shuffle       = true;
+    std::vector<JellyfinStation> stations;
+    std::string active_station;
+    bool shuffle = true;
 };
 
 struct RadioStation {

@@ -152,10 +152,32 @@ Config load_config(const std::filesystem::path& path) {
     cfg.jellyfin.server_url = pick<std::string>(jf, "server_url", cfg.jellyfin.server_url);
     cfg.jellyfin.api_key    = pick<std::string>(jf, "api_key", cfg.jellyfin.api_key);
     cfg.jellyfin.user_id    = pick<std::string>(jf, "user_id", cfg.jellyfin.user_id);
-    cfg.jellyfin.default_playlist =
-        pick<std::string>(jf, "default_playlist", cfg.jellyfin.default_playlist);
-    cfg.jellyfin.use_favorites = pick<bool>(jf, "use_favorites", cfg.jellyfin.use_favorites);
-    cfg.jellyfin.shuffle       = pick<bool>(jf, "shuffle", cfg.jellyfin.shuffle);
+    cfg.jellyfin.active_station = pick<std::string>(jf, "active_station", cfg.jellyfin.active_station);
+    cfg.jellyfin.shuffle    = pick<bool>(jf, "shuffle", cfg.jellyfin.shuffle);
+
+    try {
+        if (jf.contains("stations")) {
+            for (const auto& st : toml::find<std::vector<toml::value>>(jf, "stations")) {
+                JellyfinStation s;
+                s.name          = pick<std::string>(st, "name", "");
+                s.playlist_id   = pick<std::string>(st, "playlist_id", "");
+                s.use_favorites = pick<bool>(st, "use_favorites", false);
+                cfg.jellyfin.stations.push_back(std::move(s));
+            }
+        }
+    } catch (...) {}
+
+    // fallback migration for old configs
+    if (cfg.jellyfin.stations.empty()) {
+        auto dp = pick<std::string>(jf, "default_playlist", "");
+        auto uf = pick<bool>(jf, "use_favorites", false);
+        if (!dp.empty() || uf) {
+            cfg.jellyfin.stations.push_back({"My Playlist", dp, uf});
+        }
+    }
+    if (cfg.jellyfin.active_station.empty() && !cfg.jellyfin.stations.empty()) {
+        cfg.jellyfin.active_station = cfg.jellyfin.stations.front().name;
+    }
 
     const auto& or_sec       = section(root, "online_radio");
     cfg.online_radio.enabled = pick<bool>(or_sec, "enabled", cfg.online_radio.enabled);
@@ -385,9 +407,14 @@ void save_config(const std::filesystem::path& path, const Config& cfg) {
     e.kv("server_url", cfg.jellyfin.server_url);
     e.kv("api_key", cfg.jellyfin.api_key);
     e.kv("user_id", cfg.jellyfin.user_id);
-    e.kv("default_playlist", cfg.jellyfin.default_playlist);
-    e.kv("use_favorites", cfg.jellyfin.use_favorites);
+    e.kv("active_station", cfg.jellyfin.active_station);
     e.kv("shuffle", cfg.jellyfin.shuffle);
+    for (const auto& st : cfg.jellyfin.stations) {
+        e.array_header("jellyfin.stations");
+        e.kv("name", st.name);
+        e.kv("playlist_id", st.playlist_id);
+        e.kv("use_favorites", st.use_favorites);
+    }
 
     e.header("external_audio");
     e.kv("enabled", cfg.external_audio.enabled);

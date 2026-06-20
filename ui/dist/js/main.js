@@ -13,6 +13,7 @@ import { createExternalAudio } from "./render/externalAudio.js";
 import { createLocalFiles } from "./render/localFiles.js";
 import { createOnlineRadio } from "./render/onlineRadio.js";
 import { createYoutubeMusic } from "./render/youtubeMusic.js";
+import { createJellyfin } from "./render/jellyfin.js";
 
 let state = null;
 let cfg = null;
@@ -33,7 +34,6 @@ const refs = {
   sources: $("#sources"),
   sourceCard: $("#source-card"),
   outputCard: $("#output-card"),
-  jfCard: $("#jf-cast-card"),
   drawer: $("#drawer"),
   scrim: $("#scrim"),
   form: $("#settings-form"),
@@ -97,6 +97,16 @@ const youtubeMusic = createYoutubeMusic(mainEl, {
   },
 });
 
+const jellyfin = createJellyfin(mainEl, {
+  getState: () => state,
+  getConfig: () => cfg,
+  onSaved: async () => {
+    cfg = await api.getConfig().catch(() => cfg);
+    state = await api.getState().catch(() => state);
+    render();
+  },
+});
+
 async function switchSource(name) {
   try {
     await api.switchSource(name);
@@ -151,14 +161,13 @@ function render() {
   localFiles.render();
   onlineRadio.render();
   youtubeMusic.render();
+  jellyfin.render();
 
   refs.sourceCard.hidden = false;
   refs.outputCard.hidden = !state.sources?.active;
 
   const available = state.sources?.available || [];
   const active = state.sources?.active;
-  // Source-specific cards only show while that source is on air.
-  refs.jfCard.hidden = active !== "jellyfin";
 }
 
 // --- BACKUP CONFIGURATION ---
@@ -210,6 +219,7 @@ if (restoreBtn && restoreFile) {
       localFiles.invalidate();
       onlineRadio.invalidate();
       youtubeMusic.invalidate();
+      jellyfin.invalidate();
       renderSettings(refs.form, cfg);
       state = await api.getState().catch(() => state);
       render();
@@ -227,19 +237,6 @@ if (restoreBtn && restoreFile) {
 $("#t-play").addEventListener("click", () => transport("play"));
 $("#t-next").addEventListener("click", () => transport("next"));
 $("#t-prev").addEventListener("click", () => transport("previous"));
-
-$("#jf-cast").addEventListener("submit", async e => {
-  e.preventDefault();
-  const playlistId = $("#jf-url").value.trim();
-  if (!playlistId) return;
-  try {
-    await api.castJellyfin(playlistId);
-    $("#jf-url").value = "";
-    toast("Playing playlist…");
-  } catch (err) {
-    toast(err.message, true);
-  }
-});
 
 $("#open-settings").addEventListener("click", async () => {
   try {
@@ -265,6 +262,7 @@ $("#save-config").addEventListener("click", async () => {
     localFiles.invalidate();
     onlineRadio.invalidate();
     youtubeMusic.invalidate();
+    jellyfin.invalidate();
     state = await api.getState().catch(() => state);
     render();
     toast("Saved");
@@ -281,6 +279,7 @@ $("#reload-config").addEventListener("click", async () => {
     localFiles.invalidate();
     onlineRadio.invalidate();
     youtubeMusic.invalidate();
+    jellyfin.invalidate();
     renderSettings(refs.form, cfg);
     render();
     toast("Reloaded from disk");
