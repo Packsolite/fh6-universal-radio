@@ -17,6 +17,8 @@ struct HotkeysConfig {
     int pad_playpause = 0;
     int kb_prev = 0;
     int pad_prev = 0;
+    int kb_next_station = 0;
+    int pad_next_station = 0;
 };
 
 struct PlaybackConfig {

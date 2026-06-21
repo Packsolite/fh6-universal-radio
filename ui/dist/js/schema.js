@@ -131,6 +131,8 @@ export const SCHEMA = [
       ["pad_skip", "Next Track (Controller)", "select-kv", PAD_BUTTONS],
       ["kb_prev", "Previous Track (Keyboard)", "select-kv", KB_KEYS],
       ["pad_prev", "Previous Track (Controller)", "select-kv", PAD_BUTTONS],
+      ["kb_next_station", "Cycle Station/Playlist (Keyboard)", "select-kv", KB_KEYS],
+      ["pad_next_station", "Cycle Station/Playlist (Controller)", "select-kv", PAD_BUTTONS],
       ["kb_source", "Switch Source (Keyboard)", "select-kv", KB_KEYS],
       ["pad_source", "Switch Source (Controller)", "select-kv", PAD_BUTTONS],
     ]

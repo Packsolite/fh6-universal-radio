@@ -24,7 +24,7 @@ namespace fh6::fmod_bridge {
 class ControlLoop {
 public:
     ControlLoop(DSPBridge& bridge, const PEImage& img, PlaybackConfig initial_playback,
-                float configured_gain);
+                float configured_gain, std::function<void()> on_cycle_station = nullptr);
     ~ControlLoop();
 
     ControlLoop(const ControlLoop&)            = delete;
@@ -58,6 +58,7 @@ private:
     DSPBridge& bridge_;
     const PEImage& img_;
     std::atomic<float> configured_gain_;
+    std::function<void()> on_cycle_station_;
     MetadataInjector meta_;
     GameStateProbe game_state_;
     std::uint64_t prev_calls_     = 0;
@@ -82,6 +83,7 @@ private:
     bool prev_source_hotkey_ = false;
     bool prev_playpause_hotkey_ = false;
     bool prev_prev_hotkey_ = false;
+    bool prev_station_hotkey_ = false;
 
     bool quick_skip_armed_  = false;
     bool paused_by_race_off_  = false;
@@ -92,10 +94,12 @@ private:
     bool pending_src_ = false;
     bool pending_pp_ = false;
     bool pending_prev_ = false;
+    bool pending_station_ = false;
 
     time_point last_source_cmd_{};
     time_point last_playpause_cmd_{};
     time_point last_prev_cmd_{};
+    time_point last_station_cmd_{};
 
     time_point last_r10_off_{};
     time_point last_race_event_{};
@@ -104,6 +108,7 @@ private:
     bool old_method_pp_fired_  = false;
     bool old_method_skip_fired_ = false;
     bool old_method_prev_fired_ = false;
+    bool old_method_station_fired_ = false;
 
     std::jthread thread_;
 };
