@@ -447,6 +447,14 @@ export function createLocalFiles(main, ctx) {
     // Refresh the queue (titles, artists, current-track highlight) when the
     // track count changes (rescan) or the metadata index advances.
     const lf = state?.sources?.available?.find(s => s.name === "local_files");
+
+    const liveActiveStation = lf?.details?.active_station;
+    if (loaded && liveActiveStation && liveActiveStation !== activeStation) {
+      activeStation = liveActiveStation;
+      selected = Math.max(0, stations.findIndex(s => s.name === activeStation));
+      renderEditor();
+    }
+    
     const tc = lf?.details?.track_count ?? -1;
     const iv = lf?.details?.index_version ?? -1;
     if (loaded && (tc !== lastTrackCount || iv !== lastIndexVersion)) {

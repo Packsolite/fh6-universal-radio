@@ -14,6 +14,7 @@
 #include <mutex>
 #include <stop_token>
 #include <thread>
+#include <functional>
 
 namespace fh6 {
 class IAudioSource;

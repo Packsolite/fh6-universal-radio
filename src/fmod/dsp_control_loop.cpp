@@ -376,6 +376,7 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     bool pad_src_pressed  = p_src && (static_cast<DWORD>(std::popcount(static_cast<uint32_t>(opts->hotkeys.pad_source))) == max_bits);
     bool pad_pp_pressed   = p_pp && (static_cast<DWORD>(std::popcount(static_cast<uint32_t>(opts->hotkeys.pad_playpause))) == max_bits);
     bool pad_prev_pressed = p_prev && (static_cast<DWORD>(std::popcount(static_cast<uint32_t>(opts->hotkeys.pad_prev))) == max_bits);
+    bool pad_station_pressed = p_station && (static_cast<DWORD>(std::popcount(static_cast<uint32_t>(opts->hotkeys.pad_next_station))) == max_bits);
 
     bool skip_pressed = kb_skip || pad_skip_pressed;
     bool src_pressed  = kb_src || pad_src_pressed;

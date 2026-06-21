@@ -322,10 +322,16 @@ void run_bridge(HMODULE self) noexcept {
             yt->set_config(c.youtube_music); 
             yt->set_yt_dlp_path(c.youtube_music.yt_dlp_path);
             yt->set_shuffle(c.youtube_music.shuffle);
+            if (mgr.active() == yt && yt->playback_state() != PlaybackState::playing) {
+                yt->play();
+            }
         }
         if (auto* jf = dynamic_cast<sources::JellyfinSource*>(mgr.find("jellyfin"))) {
             jf->set_ffmpeg_path(c.general.ffmpeg_path);
             jf->set_config(c.jellyfin);
+            if (mgr.active() == jf && jf->playback_state() != PlaybackState::playing) {
+                jf->play();
+            }
         }
         if (auto* ext = dynamic_cast<sources::ExternalAudioSource*>(mgr.find("external_audio"))) {
             ext->set_config(c.external_audio);
@@ -336,6 +342,9 @@ void run_bridge(HMODULE self) noexcept {
         if (auto* rd = dynamic_cast<sources::OnlineRadioSource*>(mgr.find("online_radio"))) {
             rd->set_ffmpeg_path(c.general.ffmpeg_path);
             rd->set_config(c.online_radio);
+            if (mgr.active() == rd && rd->playback_state() != PlaybackState::playing) {
+                rd->play();
+            }
         }
 
         for (auto* s : mgr.sources_snapshot()) s->set_playback_options(c.playback);
