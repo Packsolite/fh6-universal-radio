@@ -351,11 +351,32 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     };
 
     // check keyboard (direct)
-    bool kb_skip = opts->hotkeys.kb_skip && (opts->hotkeys.kb_skip != 0x9999) && (GetAsyncKeyState(opts->hotkeys.kb_skip) & 0x8000);
-    bool kb_src  = opts->hotkeys.kb_source && (opts->hotkeys.kb_source != 0x9999) && (GetAsyncKeyState(opts->hotkeys.kb_source) & 0x8000);
-    bool kb_pp   = opts->hotkeys.kb_playpause && (opts->hotkeys.kb_playpause != 0x9999) && (GetAsyncKeyState(opts->hotkeys.kb_playpause) & 0x8000);
-    bool kb_prev = opts->hotkeys.kb_prev && (opts->hotkeys.kb_prev != 0x9999) && (GetAsyncKeyState(opts->hotkeys.kb_prev) & 0x8000);
-    bool kb_station = opts->hotkeys.kb_next_station && (opts->hotkeys.kb_next_station != 0x9999) && (GetAsyncKeyState(opts->hotkeys.kb_next_station) & 0x8000);
+    // helper function to decode keyboard combinations
+    auto check_kb = [](int bind) {
+        if (!bind || bind == 0x9999) return false;
+        
+        int vk = bind & 0xFF;
+        bool shift_req = (bind & 0x0100) != 0;
+        bool ctrl_req  = (bind & 0x0200) != 0;
+        bool alt_req   = (bind & 0x0400) != 0;
+
+        // check if the base key is physically pressed
+        if (!(GetAsyncKeyState(vk) & 0x8000)) return false;
+
+        // strictly check if the modifiers match the requirement
+        bool shift_down = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+        bool ctrl_down  = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+        bool alt_down   = (GetAsyncKeyState(VK_MENU) & 0x8000) != 0;
+
+        return (shift_req == shift_down) && (ctrl_req == ctrl_down) && (alt_req == alt_down);
+    };
+
+    // evaluate keyboard inputs
+    bool kb_skip    = check_kb(opts->hotkeys.kb_skip);
+    bool kb_src     = check_kb(opts->hotkeys.kb_source);
+    bool kb_pp      = check_kb(opts->hotkeys.kb_playpause);
+    bool kb_prev    = check_kb(opts->hotkeys.kb_prev);
+    bool kb_station = check_kb(opts->hotkeys.kb_next_station);
 
     // check controller (resolve overlap by complexity)
     bool p_skip = check_pad(opts->hotkeys.pad_skip);
@@ -413,13 +434,6 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     bool prev_edge = prev_pressed && !prev_prev_hotkey_;
     bool station_edge = station_pressed && !prev_station_hotkey_;
 
-    // buffer
-    if (skip_edge) pending_skip_ = true;
-    if (src_edge)  pending_src_ = true;
-    if (pp_edge)   pending_pp_ = true;
-    if (prev_edge) pending_prev_ = true;
-    if (station_edge) pending_station_ = true;
-
     bool trigger_skip = old_method_skip_fired_;
     bool trigger_src  = old_method_src_fired_;
     bool trigger_pp   = old_method_pp_fired_;
@@ -431,8 +445,30 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
     old_method_prev_fired_ = false;
     old_method_station_fired_ = false;
 
+    // buffer controller inputs or fire keyboard immediately
+    if (skip_edge) {
+        if (kb_skip) trigger_skip = true;
+        else pending_skip_ = true;
+    }
+    if (src_edge) {
+        if (kb_src) trigger_src = true;
+        else pending_src_ = true;
+    }
+    if (pp_edge) {
+        if (kb_pp) trigger_pp = true;
+        else pending_pp_ = true;
+    }
+    if (prev_edge) {
+        if (kb_prev) trigger_prev = true;
+        else pending_prev_ = true;
+    }
+    if (station_edge) {
+        if (kb_station) trigger_station = true;
+        else pending_station_ = true;
+    }
+
     // track how long buttons have been held to allow combos to form
-    if (skip_pressed || src_pressed || pp_pressed || prev_pressed || station_pressed) {
+    if (pad_skip_pressed || pad_src_pressed || pad_pp_pressed || pad_prev_pressed || pad_station_pressed) {
         if (combo_wait_ticks_ >= 0) {
             combo_wait_ticks_++;
         }
