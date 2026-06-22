@@ -256,6 +256,15 @@ export function createJellyfin(main, ctx) {
     load();
 
     const jfDetails = state?.sources?.available?.find(s => s.name === "jellyfin")?.details;
+
+    const liveActiveStation = jfDetails?.active_station;
+    if (loaded && liveActiveStation && liveActiveStation !== activeStation) {
+      activeStation = liveActiveStation;
+      selected = Math.max(0, stations.findIndex(s => s.name === activeStation));
+      renderEditor();
+      loadQueue();
+    }
+    
     const shuffleOn = !!jfDetails?.shuffle;
     shuffleBtn.classList.toggle("toggled", shuffleOn);
     shuffleBtn.setAttribute("aria-pressed", String(shuffleOn));

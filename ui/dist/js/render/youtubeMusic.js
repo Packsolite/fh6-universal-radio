@@ -248,6 +248,15 @@ export function createYoutubeMusic(main, ctx) {
     load();
 
     const ytDetails = state?.sources?.available?.find(s => s.name === "youtube_music")?.details;
+
+    const liveActiveStation = ytDetails?.active_station;
+    if (loaded && liveActiveStation && liveActiveStation !== activeStation) {
+      activeStation = liveActiveStation;
+      selected = Math.max(0, stations.findIndex(s => s.name === activeStation));
+      renderEditor();
+      loadQueue();
+    }
+    
     const shuffleOn = !!ytDetails?.shuffle;
     shuffleBtn.classList.toggle("toggled", shuffleOn);
     shuffleBtn.setAttribute("aria-pressed", String(shuffleOn));
