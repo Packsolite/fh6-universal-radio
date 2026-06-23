@@ -7,6 +7,8 @@
 #include <memory>
 #include <d3d12.h>
 #include "fh6/worker/worker_client.hpp"
+#include "fh6/config_store.hpp"
+#include "fh6/deps.hpp"
 
 namespace fh6 {
 class TextureInjector {
@@ -29,6 +31,16 @@ public:
         worker_ = std::move(w); 
     }
 
+    void set_config_store(ConfigStore* store) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        config_store_ = store;
+    }
+
+    void set_deps(DependencyManager* deps) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        deps_ = deps;
+    }
+
 private:
     std::mutex mtx_;
     std::vector<uint8_t> pending_pixels_;
@@ -40,5 +52,7 @@ private:
     std::atomic<uint64_t> latest_job_id_{0};
 
     std::shared_ptr<worker::WorkerClient> worker_;
+    ConfigStore* config_store_ = nullptr;
+    DependencyManager* deps_ = nullptr;
 };
 } // namespace fh6

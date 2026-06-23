@@ -10,9 +10,13 @@ namespace fh6 {
 
 void TextureInjector::update_artwork_url(const std::string& url) {
     std::shared_ptr<worker::WorkerClient> local_worker;
+    ConfigStore* local_config = nullptr;
+    DependencyManager* local_deps = nullptr;
     {
         std::lock_guard<std::mutex> lock(mtx_);
         local_worker = worker_;
+        local_config = config_store_;
+        local_deps = deps_;
     }
     
     is_processing_.store(true);
@@ -20,7 +24,7 @@ void TextureInjector::update_artwork_url(const std::string& url) {
     // grab a unique ticket for this job
     uint64_t my_job_id = ++latest_job_id_;
 
-    std::thread([this, url, my_job_id, local_worker]() {
+    std::thread([this, url, my_job_id, local_worker, local_config, local_deps]() {
         // only clear the processing flag if this thread is still the newest job
         struct ProcessingGuard {
             std::atomic<bool>& flag;
@@ -102,8 +106,21 @@ void TextureInjector::update_artwork_url(const std::string& url) {
             // don't saturate the CPU with FFmpeg if user skipped
             if (latest_job_id_.load() != my_job_id) return; 
 
-            std::string ffmpeg_path = (game_dir / "fh6-radio" / "bin" / "ffmpeg.exe").string();
-            std::string texconv_path = (game_dir / "fh6-radio" / "bin" / "texconv.exe").string();
+             if (!local_config || !local_deps) {
+                log::error("[dx12] job {}: missing ConfigStore or DependencyManager", my_job_id);
+                return;
+            }
+
+            Config cfg = local_config->snapshot(); // get thread-safe config
+            
+            // resolve paths using the DependencyManager + Config overrides
+            std::string ffmpeg_path = local_deps->resolve(Tool::ffmpeg, cfg.general.ffmpeg_path).string();
+            std::string texconv_path = local_deps->resolve(Tool::texconv, "").string(); // texconv has no user override
+
+            if (ffmpeg_path.empty() || texconv_path.empty()) {
+                log::error("[dx12] job {}: missing dependencies (ffmpeg or texconv) - cannot process artwork", my_job_id);
+                return;
+            }
 
             log::info("[dx12] job {}: running image pipeline...", my_job_id);
 

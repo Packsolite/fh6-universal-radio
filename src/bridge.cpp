@@ -153,6 +153,9 @@ void run_bridge(HMODULE self) noexcept {
 
     DependencyManager deps{data_dir / "bin"};
 
+    TextureInjector::instance().set_deps(&deps);
+    TextureInjector::instance().set_config_store(&store);
+
     // Worker process: delegates CreateProcess calls to a small external exe
     // so the fork() Wine performs is cheap (~5 MB) instead of copying the
     // game's multi-GB page table.  Falls back to direct spawn if absent.
