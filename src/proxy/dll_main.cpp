@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <mutex>
 #include <chrono>
+#include <wrl/client.h>
 #include "fh6/fmod/texture_injector.hpp"
 
 #include "kiero.h"
@@ -20,16 +21,18 @@
 #include <dxgi1_4.h>
 #include "fh6/log.hpp"
 
+void InitDX12HookThread();
+
 uint64_t EXPECTED_STREAMER_HASH = 0x69F6C569FDFE6B09ULL; // hash for streamer mode logo
 
 struct TrackedTexture {
-    ID3D12Resource* ptr;
+    Microsoft::WRL::ComPtr<ID3D12Resource> ptr;
     std::chrono::steady_clock::time_point discovered;
 };
 
 std::mutex g_TextureMutex;
 std::vector<TrackedTexture> g_UnverifiedResources;
-std::vector<ID3D12Resource*> g_StreamerModeResources;
+std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> g_StreamerModeResources;
 
 uint64_t CalculateFNV1a(const uint8_t* data, size_t length) {
     uint64_t hash = 0xcbf29ce484222325ull;
@@ -55,6 +58,16 @@ bool IsTargetTexture(ID3D12Resource* pResource) {
                 (desc.Format == DXGI_FORMAT_BC7_UNORM || desc.Format == DXGI_FORMAT_BC7_UNORM_SRGB));
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false; 
+    }
+}
+
+void ProcessFingerprintResult(uint64_t hash, ID3D12Resource* pRes) {
+    fh6::log::info("[dx12] fingerprint checksum: 0x{:X}", hash);
+    
+    if (EXPECTED_STREAMER_HASH == 0 || hash == EXPECTED_STREAMER_HASH) {
+        std::lock_guard<std::mutex> lock(g_TextureMutex);
+        g_StreamerModeResources.emplace_back(pRes);
+        fh6::log::info("[dx12] ---> added to streamer mode array");
     }
 }
 
@@ -99,13 +112,18 @@ __declspec(noinline) bool SafeExecuteFingerprint(
         ID3D12Fence* pFence = nullptr;
         if (SUCCEEDED(pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence), (void**)&pFence))) {
             HANDLE event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-            if (event) {
-                pQueue->Signal(pFence, 1);
-                pFence->SetEventOnCompletion(1, event);
-                WaitForSingleObject(event, INFINITE);
-                CloseHandle(event);
+            if (!event) {
+                pFence->Release();
+                return false;
             }
-            pFence->Release();
+            HRESULT signalHr = pQueue->Signal(pFence, 1);
+            HRESULT eventHr = SUCCEEDED(signalHr) ? pFence->SetEventOnCompletion(1, event) : signalHr;
+            DWORD waitResult = SUCCEEDED(eventHr) ? WaitForSingleObject(event, 5000) : WAIT_FAILED;
+            CloseHandle(event);
+            if (FAILED(signalHr) || FAILED(eventHr) || waitResult != WAIT_OBJECT_0) {
+                pFence->Release();
+                return false;
+            }
         }
 
         pRbAllocator->Reset();
@@ -116,15 +134,7 @@ __declspec(noinline) bool SafeExecuteFingerprint(
             uint64_t hash = CalculateFNV1a(pMapped, readbackSize);
             pReadbackRes->Unmap(0, nullptr);
 
-            fh6::log::info("[dx12] fingerprint checksum: 0x{:X}", hash);
-            
-            // 0 = debug value
-            if (EXPECTED_STREAMER_HASH == 0 || hash == EXPECTED_STREAMER_HASH) {
-                g_TextureMutex.lock();
-                g_StreamerModeResources.push_back(pRes);
-                g_TextureMutex.unlock();
-                fh6::log::info("[dx12] ---> added to streamer mode array!");
-            }
+            ProcessFingerprintResult(hash, pRes);
         }
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -181,11 +191,17 @@ __declspec(noinline) bool SafeExecuteInjection(
         ID3D12Fence* pFence = nullptr;
         if (SUCCEEDED(pDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, __uuidof(ID3D12Fence), (void**)&pFence))) {
             HANDLE event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
-            if (event) {
-                pQueue->Signal(pFence, 1);
-                pFence->SetEventOnCompletion(1, event);
-                WaitForSingleObject(event, INFINITE);
-                CloseHandle(event);
+            if (!event) {
+                pFence->Release();
+                return false;
+            }
+            HRESULT signalHr = pQueue->Signal(pFence, 1);
+            HRESULT eventHr = SUCCEEDED(signalHr) ? pFence->SetEventOnCompletion(1, event) : signalHr;
+            DWORD waitResult = SUCCEEDED(eventHr) ? WaitForSingleObject(event, 5000) : WAIT_FAILED;
+            CloseHandle(event);
+            if (FAILED(signalHr) || FAILED(eventHr) || waitResult != WAIT_OBJECT_0) {
+                pFence->Release();
+                return false;
             }
             pFence->Release();
         }
@@ -218,10 +234,13 @@ void __stdcall HookedCreateSRV(ID3D12Device* pDevice, ID3D12Resource* pResource,
 
         bool found = false;
         for(const auto& t : g_UnverifiedResources) {
-            if(t.ptr == pResource) { found = true; break; }
+            if(t.ptr.Get() == pResource) { found = true; break; }
         }
         
-        if (!found && std::find(g_StreamerModeResources.begin(), g_StreamerModeResources.end(), pResource) == g_StreamerModeResources.end()) {
+        auto it = std::find_if(g_StreamerModeResources.begin(), g_StreamerModeResources.end(), 
+            [&](const Microsoft::WRL::ComPtr<ID3D12Resource>& p) { return p.Get() == pResource; });
+            
+        if (!found && it == g_StreamerModeResources.end()) {
             g_UnverifiedResources.push_back({pResource, now});
             fh6::log::info("[dx12] found a 196x104 texture @ {}", (void*)pResource);
         }
@@ -250,7 +269,7 @@ void __stdcall HookedExecuteCommandLists(ID3D12CommandQueue* pQueue, UINT NumCom
             std::lock_guard<std::mutex> lock(g_TextureMutex);
             for (auto it = g_UnverifiedResources.begin(); it != g_UnverifiedResources.end(); ) {
                 if (std::chrono::duration_cast<std::chrono::seconds>(now - it->discovered).count() >= 2) {
-                    ready_to_fingerprint.push_back(it->ptr);
+                    ready_to_fingerprint.push_back(it->ptr.Get());
                     it = g_UnverifiedResources.erase(it);
                 } else {
                     ++it;
@@ -301,7 +320,10 @@ void __stdcall HookedExecuteCommandLists(ID3D12CommandQueue* pQueue, UINT NumCom
         std::vector<ID3D12Resource*> streamer_copy;
         {
             std::lock_guard<std::mutex> lock(g_TextureMutex);
-            streamer_copy = g_StreamerModeResources;
+            streamer_copy.reserve(g_StreamerModeResources.size());
+            for (const auto& res : g_StreamerModeResources) {
+                streamer_copy.push_back(res.Get());
+            }
         }
 
         if (!streamer_copy.empty()) {
@@ -316,6 +338,14 @@ void __stdcall HookedExecuteCommandLists(ID3D12CommandQueue* pQueue, UINT NumCom
                 UINT tightRowPitch = blocksX * 16; 
                 UINT alignedRowPitch = (tightRowPitch + 255) & ~255; 
                 UINT64 uploadBufferSize = alignedRowPitch * blocksY;
+
+                const size_t requiredPayloadSize = static_cast<size_t>(tightRowPitch) * blocksY;
+                if (w != 196 || h != 104 || new_pixels.size() < requiredPayloadSize) {
+                    fh6::log::warn("[dx12] invalid BC7 payload: {}x{}, {} bytes", w, h, new_pixels.size());
+                    pDevice->Release();
+                    OriginalExecuteCommandLists(pQueue, NumCommandLists, ppCommandLists);
+                    return;
+                }
 
                 D3D12_HEAP_PROPERTIES uploadHeap = { D3D12_HEAP_TYPE_UPLOAD };
                 D3D12_RESOURCE_DESC uploadDesc = {};
@@ -339,10 +369,20 @@ void __stdcall HookedExecuteCommandLists(ID3D12CommandQueue* pQueue, UINT NumCom
                         pUploadResource->Unmap(0, nullptr);
                     }
 
-                    ID3D12CommandAllocator* pAllocator;
-                    ID3D12GraphicsCommandList* pCmdList;
-                    pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, __uuidof(ID3D12CommandAllocator), (void**)&pAllocator);
-                    pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, pAllocator, nullptr, __uuidof(ID3D12GraphicsCommandList), (void**)&pCmdList);
+                    ID3D12CommandAllocator* pAllocator = nullptr;
+                    ID3D12GraphicsCommandList* pCmdList = nullptr;
+                    HRESULT allocHr = pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, __uuidof(ID3D12CommandAllocator), (void**)&pAllocator);
+                    HRESULT listHr = SUCCEEDED(allocHr)
+                        ? pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, pAllocator, nullptr, __uuidof(ID3D12GraphicsCommandList), (void**)&pCmdList)
+                        : allocHr;
+                    if (FAILED(allocHr) || FAILED(listHr) || !pAllocator || !pCmdList) {
+                        if (pCmdList) pCmdList->Release();
+                        if (pAllocator) pAllocator->Release();
+                        pUploadResource->Release();
+                        pDevice->Release();
+                        OriginalExecuteCommandLists(pQueue, NumCommandLists, ppCommandLists);
+                        return;
+                    }
 
                     D3D12_TEXTURE_COPY_LOCATION srcLoc = {};
                     srcLoc.pResource = pUploadResource;
@@ -378,11 +418,22 @@ void __stdcall HookedExecuteCommandLists(ID3D12CommandQueue* pQueue, UINT NumCom
 // ==============================================================================
 // INITIALIZATION
 // ==============================================================================
+
+extern "C" __declspec(dllexport) void InitializeDX12Hook() {
+    std::thread(InitDX12HookThread).detach();
+}
+
 void InitDX12HookThread() {
     for (int i = 0; i < 500; ++i) {
         if (kiero::init(kiero::RenderType::D3D12) == kiero::Status::Success) {
-            kiero::bind(18, (void**)&OriginalCreateSRV, (void*)HookedCreateSRV);
-            kiero::bind(54, (void**)&OriginalExecuteCommandLists, (void*)HookedExecuteCommandLists);
+            auto srvStatus = kiero::bind(18, (void**)&OriginalCreateSRV, (void*)HookedCreateSRV);
+            auto executeStatus = kiero::bind(54, (void**)&OriginalExecuteCommandLists, (void*)HookedExecuteCommandLists);
+            if (srvStatus != kiero::Status::Success || executeStatus != kiero::Status::Success ||
+                !OriginalCreateSRV || !OriginalExecuteCommandLists) {
+                fh6::log::warn("[dx12] hook binding failed: srv={}, execute={}", (int)srvStatus, (int)executeStatus);
+                kiero::shutdown();
+                continue;
+            }
             
             fh6::log::info("[dx12] hooks initialized");
             return; 
@@ -420,8 +471,11 @@ namespace fh6 {
 void run_bridge(HMODULE self) noexcept;
 } // namespace fh6
 
+extern "C" __declspec(dllexport) void InitializeDX12Hook();
+
 namespace {
 DWORD WINAPI bridge_thread(LPVOID self) {
+    InitializeDX12Hook(); 
     fh6::run_bridge(static_cast<HMODULE>(self));
     return 0;
 }
@@ -429,7 +483,6 @@ DWORD WINAPI bridge_thread(LPVOID self) {
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) noexcept {
     if (reason == DLL_PROCESS_ATTACH) {
-        std::thread(InitDX12HookThread).detach();
         DisableThreadLibraryCalls(hModule);
         if (HANDLE t = CreateThread(nullptr, 0, bridge_thread, hModule, 0, nullptr)) CloseHandle(t);
     }
