@@ -59,10 +59,20 @@ ControlLoop::~ControlLoop() {
 void ControlLoop::run(const std::stop_token& tok) {
     log::info("[ctrl] control loop started");
 
+    int discovery_attempts = 0;
+
     while (!tok.stop_requested()) {
         if (acquire_target()) {
             break;
         }
+        
+        // every 6 misses (~30 seconds), automatically send the off->on station toggle
+        // to force the game to instantiate the missing FMOD radio structures
+        if (++discovery_attempts % 6 == 0) {
+            log::info("[ctrl] initial discovery stalled; auto-cycling station to force initialization...");
+            game_state_.retune_streamer_station();
+        }
+
         for (auto t = std::chrono::steady_clock::now() + kDiscoveryRetry;
              std::chrono::steady_clock::now() < t && !tok.stop_requested();)
             std::this_thread::sleep_for(kTick);
