@@ -1,4 +1,5 @@
 #include "fh6/fmod/texture_injector.hpp"
+#include "fh6/subprocess.hpp"
 #include "fh6/net/http_get.hpp"
 #include "fh6/log.hpp"
 #include <thread>
@@ -137,7 +138,7 @@ void TextureInjector::update_artwork_url(const std::string& url) {
                 DWORD wait = WaitForSingleObject(pi.hProcess, 30000);
                 DWORD exit_code = 1;
                 if (wait == WAIT_TIMEOUT) {
-                    TerminateProcess(pi.hProcess, 1);
+                    fh6::subprocess::kill_process_tree(pi.dwProcessId); 
                     log::warn("[dx12] job {}: image pipeline timed out", my_job_id);
                 } else {
                     GetExitCodeProcess(pi.hProcess, &exit_code);
