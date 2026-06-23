@@ -7,6 +7,14 @@
 #include <filesystem>
 #include <windows.h>
 
+// stb headers
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb_image_resize2.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 namespace fh6 {
 
 void TextureInjector::update_artwork_url(const std::string& url) {
@@ -114,19 +122,59 @@ void TextureInjector::update_artwork_url(const std::string& url) {
 
             Config cfg = local_config->snapshot(); // get thread-safe config
             
-            // resolve paths using the DependencyManager + Config overrides
-            std::string ffmpeg_path = local_deps->resolve(Tool::ffmpeg, cfg.general.ffmpeg_path).string();
-            std::string texconv_path = local_deps->resolve(Tool::texconv, "").string(); // texconv has no user override
+            // resolve path using the DependencyManager
+            std::string texconv_path = local_deps->resolve(Tool::texconv, "").string();
 
-            if (ffmpeg_path.empty() || texconv_path.empty()) {
-                log::error("[dx12] job {}: missing dependencies (ffmpeg or texconv) - cannot process artwork", my_job_id);
+            if (texconv_path.empty()) {
+                log::error("[dx12] job {}: missing texconv - cannot process artwork", my_job_id);
                 return;
             }
 
-            log::info("[dx12] job {}: running image pipeline...", my_job_id);
+            log::info("[dx12] job {}: resizing artwork natively using stb...", my_job_id);
 
-            std::string combined_cmd = "cmd.exe /c \"\"" + ffmpeg_path + "\" -y -v error -i \"" + raw_path + "\" -filter_complex \"[0:v]scale=196:104:force_original_aspect_ratio=decrease,pad=196:104:0:(oh-ih)/2:color=black@0\" -pix_fmt rgba -frames:v 1 \"" + png_path + "\" && \"" + texconv_path + "\" -f BC7_UNORM -w 196 -h 104 -m 1 -pmalpha -gpu 0 -y -o \"" + temp_dir_str + "\" \"" + png_path + "\"\"";
-            std::vector<char> cmd_buf(combined_cmd.begin(), combined_cmd.end());
+            // load the raw image
+            int width, height, channels;
+            unsigned char* img_data = stbi_load(raw_path.c_str(), &width, &height, &channels, 4);
+            if (!img_data) {
+                log::warn("[dx12] job {}: failed to load raw image", my_job_id);
+                return;
+            }
+
+            // calculate aspect-ratio preserving dimensions
+            int target_w = 196;
+            int target_h = 104;
+            float scale = std::min((float)target_w / width, (float)target_h / height);
+            int new_w = std::max(1, (int)(width * scale));
+            int new_h = std::max(1, (int)(height * scale));
+
+            // resize image using STB
+            std::vector<unsigned char> resized_data(new_w * new_h * 4);
+            stbir_resize_uint8_linear(img_data, width, height, 0, resized_data.data(), new_w, new_h, 0, (stbir_pixel_layout)4);
+            stbi_image_free(img_data);
+
+            // create transparent padded canvas
+            std::vector<unsigned char> padded_data(target_w * target_h * 4, 0);
+
+            // copy resized image into the center of the padded canvas
+            int offset_x = 0;                       // 0 forces it to the far left edge
+            int offset_y = (target_h - new_h) / 2; // keeps it vertically centered
+            for (int y = 0; y < new_h; ++y) {
+                for (int x = 0; x < new_w; ++x) {
+                    int src_idx = (y * new_w + x) * 4;
+                    int dst_idx = ((y + offset_y) * target_w + (x + offset_x)) * 4;
+                    padded_data[dst_idx] = resized_data[src_idx];
+                    padded_data[dst_idx+1] = resized_data[src_idx+1];
+                    padded_data[dst_idx+2] = resized_data[src_idx+2];
+                    padded_data[dst_idx+3] = resized_data[src_idx+3];
+                }
+            }
+
+            stbi_write_png(png_path.c_str(), target_w, target_h, 4, padded_data.data(), target_w * 4);
+
+            log::info("[dx12] job {}: compressing to BC7 with texconv...", my_job_id);
+
+            std::string texconv_cmd = "\"" + texconv_path + "\" -f BC7_UNORM -w 196 -h 104 -m 1 -pmalpha -gpu 0 -y -o \"" + temp_dir_str + "\" \"" + png_path + "\"";
+            std::vector<char> cmd_buf(texconv_cmd.begin(), texconv_cmd.end());
             cmd_buf.push_back('\0');
             
             STARTUPINFOA si = { sizeof(si) };
