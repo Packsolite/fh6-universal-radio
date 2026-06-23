@@ -9,6 +9,7 @@
 #include "fh6/fmod/dsp_bridge.hpp"
 #include "fh6/fmod/dsp_control_loop.hpp"
 #include "fh6/fmod/pe_image.hpp"
+#include "fh6/fmod/texture_injector.hpp"
 #include "fh6/http/http_server.hpp"
 #include "fh6/sources/local_file_source.hpp"
 #include "fh6/sources/external_audio_source.hpp"
@@ -163,6 +164,8 @@ void run_bridge(HMODULE self) noexcept {
         
         if (worker.start(worker_exe, {{L"RUST_LOG", L"librespot_playback::player=debug,librespot_metadata=trace"}})) {
             log::info("[bridge] worker process started");
+
+            TextureInjector::instance().set_worker_client(&worker);
         } else {
             log::warn("[bridge] worker process unavailable -- falling back to direct spawn");
         }

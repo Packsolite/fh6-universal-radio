@@ -580,6 +580,20 @@ void ControlLoop::push_metadata() noexcept {
     } catch (...) {
         return;
     }
+
+    static std::string current_artwork_url = "";
+    if (info.artwork_url != current_artwork_url) {
+        current_artwork_url = info.artwork_url;
+        TextureInjector::instance().update_artwork_url(current_artwork_url);
+    }
+
+    // if the texture is currently downloading/converting, abort function early
+    // the next time this loop ticks (after the image is ready),
+    // the text and image will update onto the screen at the same time
+    if (TextureInjector::instance().is_processing()) {
+        return; 
+    }
+
     std::string title  = !info.title.empty() ? info.title : std::string{a->display_name()};
     std::string artist = info.artist;
     if (artist.empty()) {

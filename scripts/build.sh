@@ -55,6 +55,7 @@ mkdir -p "$dist/fh6-radio"
 
 cp "$build/version.dll"            "$dist/"
 cp "$build/fh6-radio-worker.exe"   "$dist/fh6-radio/"
+cp -r "$root/assets"               "$dist/fh6-radio/assets"
 cp -r "$root/ui/dist"              "$dist/fh6-radio/ui"
 cp "$root/config.example.toml"     "$dist/fh6-radio/config.toml"
 
