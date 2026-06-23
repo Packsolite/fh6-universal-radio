@@ -18,6 +18,9 @@ fetch() {
     curl -fsSL "$url" -o "$tp/$out"
 }
 
+fetch https://raw.githubusercontent.com/nlohmann/json/develop/single_include/nlohmann/json.hpp nlohmann/nlohmann/json.hpp
+fetch https://raw.githubusercontent.com/ToruNiina/toml11/main/single_include/toml.hpp           toml11/toml.hpp
+fetch https://raw.githubusercontent.com/mackron/miniaudio/master/miniaudio.h                    miniaudio/miniaudio.h
 fetch https://raw.githubusercontent.com/nothings/stb/master/stb_image.h                    stb/stb_image.h
 fetch https://raw.githubusercontent.com/Rebzzel/kiero/master/kiero.h                       kiero/kiero.h
 fetch https://raw.githubusercontent.com/Rebzzel/kiero/master/kiero.cpp                     kiero/kiero.cpp
@@ -34,7 +37,7 @@ fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/hde64
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/pstdint.h       minhook/src/hde/pstdint.h
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/table32.h       minhook/src/hde/table32.h
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/table64.h       minhook/src/hde/table64.h
-fetch https://dummyimage.com/196x104/1a1a1a/ffffff.png&text=No+Metadata                     assets/default_artwork.png
+fetch https://dummyimage.com/196x104/1a1a1a/ffffff.png&text=No+Metadata                    assets/default_artwork.png
 
 printf '\033[33mApplying required patches to Kiero...\033[0m\n'
 
