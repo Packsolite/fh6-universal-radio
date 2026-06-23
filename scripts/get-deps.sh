@@ -45,8 +45,18 @@ printf '\033[33mApplying required patches to Kiero...\033[0m\n'
 sed -i 's/KIERO_INCLUDE_D3D12  0/KIERO_INCLUDE_D3D12  1/g' "$tp/kiero/kiero.h"
 sed -i 's/KIERO_USE_MINHOOK    0/KIERO_USE_MINHOOK    1/g' "$tp/kiero/kiero.h"
 
+if ! grep -q "KIERO_INCLUDE_D3D12  1" "$tp/kiero/kiero.h" || ! grep -q "KIERO_USE_MINHOOK    1" "$tp/kiero/kiero.h"; then
+    printf '\033[31mError: kiero.h patch failed. Upstream layout may have changed.\033[0m\n' >&2
+    exit 1
+fi
+
 # Patch kiero.cpp to add stdlib.h and fix the MinHook include path
 sed -i 's|# include "minhook/include/MinHook.h"|# include "MinHook.h"|g' "$tp/kiero/kiero.cpp"
 sed -i '1i #include <stdlib.h>' "$tp/kiero/kiero.cpp"
+
+if ! grep -q '# include "MinHook.h"' "$tp/kiero/kiero.cpp" || ! grep -q '#include <stdlib.h>' "$tp/kiero/kiero.cpp"; then
+    printf '\033[31mError: kiero.cpp patch failed. Upstream layout may have changed.\033[0m\n' >&2
+    exit 1
+fi
 
 printf '\n\033[32mAll dependencies and assets fetched successfully.\033[0m\n'

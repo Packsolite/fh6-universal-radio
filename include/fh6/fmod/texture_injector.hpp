@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <mutex>
 #include <atomic>
+#include <memory>
 #include <d3d12.h>
 #include "fh6/worker/worker_client.hpp"
 
@@ -23,7 +24,10 @@ public:
     // lets the control loop know if currently building a new texture
     bool is_processing() const { return is_processing_.load(); }
 
-    void set_worker_client(worker::WorkerClient* w) { worker_ = w; }
+    void set_worker_client(std::shared_ptr<worker::WorkerClient> w) { 
+        std::lock_guard<std::mutex> lock(mtx_);
+        worker_ = std::move(w); 
+    }
 
 private:
     std::mutex mtx_;
@@ -35,6 +39,6 @@ private:
     std::atomic<bool> is_processing_{false}; 
     std::atomic<uint64_t> latest_job_id_{0};
 
-    worker::WorkerClient* worker_ = nullptr; 
+    std::shared_ptr<worker::WorkerClient> worker_;
 };
 } // namespace fh6

@@ -65,6 +65,15 @@ New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 Copy-Item (Join-Path $build "Release\version.dll") $dist
 Copy-Item (Join-Path $build "Release\fh6-radio-worker.exe") $dataDir
+
+# Validate assets are present before copying
+if (-not (Test-Path (Join-Path $root "assets\default_artwork.png"))) {
+    throw "Missing required assets (e.g., default_artwork.png). Please run .\scripts\get-deps.ps1 again to fetch missing dependencies."
+}
+
+Copy-Item -Recurse -Force (Join-Path $root "assets") (Join-Path $dataDir "assets")
+Copy-Item -Recurse (Join-Path $root "ui\dist") (Join-Path $dataDir "ui")
+Copy-Item (Join-Path $root "config.example.toml") (Join-Path $dataDir "config.toml")
 Copy-Item -Recurse -Force (Join-Path $root "assets") (Join-Path $dataDir "assets")
 Copy-Item -Recurse (Join-Path $root "ui\dist") (Join-Path $dataDir "ui")
 Copy-Item (Join-Path $root "config.example.toml") (Join-Path $dataDir "config.toml")

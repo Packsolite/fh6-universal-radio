@@ -124,6 +124,7 @@ std::optional<std::string> http_get(std::string_view url, std::string_view extra
         return std::nullopt;
     }
 
+    constexpr std::size_t kMaxHttpBodyBytes = 10 * 1024 * 1024;
     std::string body;
     DWORD dwDownloaded = 0;
     do {
@@ -133,6 +134,10 @@ std::optional<std::string> http_get(std::string_view url, std::string_view extra
             return std::nullopt;
         }
         if (dwAvailable == 0) break;
+        if (dwAvailable > kMaxHttpBodyBytes - body.size()) {
+            log::error("[http] response exceeded maximum download size");
+            return std::nullopt;
+        }
 
         std::vector<char> buffer(dwAvailable);
         if (!WinHttpReadData(hRequest, buffer.data(), dwAvailable, &dwDownloaded)) {

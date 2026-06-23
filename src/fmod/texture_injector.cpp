@@ -9,12 +9,18 @@
 namespace fh6 {
 
 void TextureInjector::update_artwork_url(const std::string& url) {
+    std::shared_ptr<worker::WorkerClient> local_worker;
+    {
+        std::lock_guard<std::mutex> lock(mtx_);
+        local_worker = worker_;
+    }
+    
     is_processing_.store(true);
     
     // grab a unique ticket for this job
     uint64_t my_job_id = ++latest_job_id_;
 
-    std::thread([this, url, my_job_id]() {
+    std::thread([this, url, my_job_id, local_worker]() {
         // only clear the processing flag if this thread is still the newest job
         struct ProcessingGuard {
             std::atomic<bool>& flag;
@@ -61,9 +67,9 @@ void TextureInjector::update_artwork_url(const std::string& url) {
             if (!url.empty()) {
                 log::info("[dx12] job {}: delegating artwork download to worker process: {}", my_job_id, url);
                 
-                if (worker_) {
+                if (local_worker) {
                     // IPC call blocks until the worker finishes downloading to raw_path
-                    has_valid_source = worker_->download_file(url, raw_path);
+                    has_valid_source = local_worker->download_file(url, raw_path);
                     
                     if (!has_valid_source) {
                         log::warn("[dx12] job {}: worker failed to download artwork - falling back to default", my_job_id);
