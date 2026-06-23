@@ -74,9 +74,6 @@ if (-not (Test-Path (Join-Path $root "assets\default_artwork.png"))) {
 Copy-Item -Recurse -Force (Join-Path $root "assets") (Join-Path $dataDir "assets")
 Copy-Item -Recurse (Join-Path $root "ui\dist") (Join-Path $dataDir "ui")
 Copy-Item (Join-Path $root "config.example.toml") (Join-Path $dataDir "config.toml")
-Copy-Item -Recurse -Force (Join-Path $root "assets") (Join-Path $dataDir "assets")
-Copy-Item -Recurse (Join-Path $root "ui\dist") (Join-Path $dataDir "ui")
-Copy-Item (Join-Path $root "config.example.toml") (Join-Path $dataDir "config.toml")
 
 Copy-Item (Join-Path $PSScriptRoot "dist-readme.txt") (Join-Path $dist "README.txt")
 

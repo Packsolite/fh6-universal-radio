@@ -50,6 +50,12 @@ cmake -S "$root" -B "$build" \
 printf '\033[36m-> cmake build (Release)\033[0m\n'
 cmake --build "$build" -j "${JOBS:-$(nproc)}"
 
+# Validate assets are present before copying
+if [ ! -f "$root/assets/default_artwork.png" ]; then
+    echo "Missing required assets (e.g., default_artwork.png). Please run scripts/get-deps.sh again to fetch missing dependencies." >&2
+    exit 1
+fi
+
 rm -rf "$dist"
 mkdir -p "$dist/fh6-radio"
 

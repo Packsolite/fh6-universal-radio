@@ -65,17 +65,10 @@ $kieroCpp = Join-Path $tp "kiero\kiero.cpp"
 $kieroCppContent = Get-Content $kieroCpp -Raw
 $beforeCpp = $kieroCppContent
 $kieroCppContent = $kieroCppContent -replace '# include "minhook/include/MinHook.h"', '# include "MinHook.h"'
-$kieroCppContent = "`#include` <stdlib.h>`r`n" + $kieroCppContent
+$kieroCppContent = "#include <stdlib.h>`r`n" + $kieroCppContent
 if ($kieroCppContent -eq $beforeCpp -or $kieroCppContent -notmatch '# include "MinHook.h"') {
    throw "Kiero cpp patch failed; upstream file layout changed."
 }
-Set-Content -Path $kieroCpp -Value $kieroCppContent -NoNewline
-
-# patch kiero.cpp to add stdlib.h and fix the MinHook include path
-$kieroCpp = Join-Path $tp "kiero\kiero.cpp"
-$kieroCppContent = Get-Content $kieroCpp -Raw
-$kieroCppContent = $kieroCppContent -replace '# include "minhook/include/MinHook.h"', '# include "MinHook.h"'
-$kieroCppContent = "#include <stdlib.h>`r`n" + $kieroCppContent
 Set-Content -Path $kieroCpp -Value $kieroCppContent -NoNewline
 
 Write-Host "`nAll dependencies and assets fetched successfully." -ForegroundColor Green

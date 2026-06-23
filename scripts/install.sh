@@ -39,6 +39,7 @@ backup_and_copy "$dist/version.dll" "$game/version.dll"
 
 mkdir -p "$game/fh6-radio"
 cp -rfT "$dist/fh6-radio/ui" "$game/fh6-radio/ui"
+cp -rfT "$dist/fh6-radio/assets" "$game/fh6-radio/assets"
 if [ ! -f "$game/fh6-radio/config.toml" ]; then
     cp "$dist/fh6-radio/config.toml" "$game/fh6-radio/config.toml"
     printf '\033[33m  + fh6-radio/config.toml  (seeded from example)\033[0m\n'
