@@ -27,24 +27,35 @@ std::optional<std::string> http_get(std::string_view url, std::string_view extra
         full_url = "http://127.0.0.1:8420" + full_url;
     }
 
-    log::info("[http] GET '{}'", full_url);
+    //log::info("[http] GET '{}'", full_url);
 
     std::wstring wurl = subprocess::widen(full_url);
 
     URL_COMPONENTS urlComp = {0};
     urlComp.dwStructSize = sizeof(urlComp);
     
-    wchar_t hostName[256];
-    wchar_t urlPath[1024];
-    
-    urlComp.lpszHostName = hostName;
-    urlComp.dwHostNameLength = sizeof(hostName) / sizeof(hostName[0]);
-    urlComp.lpszUrlPath = urlPath;
-    urlComp.dwUrlPathLength = sizeof(urlPath) / sizeof(urlPath[0]);
+    urlComp.dwHostNameLength = static_cast<DWORD>(-1);
+    urlComp.dwUrlPathLength = static_cast<DWORD>(-1);
+    urlComp.dwExtraInfoLength = static_cast<DWORD>(-1);
 
     if (!WinHttpCrackUrl(wurl.c_str(), 0, 0, &urlComp)) {
         log::error("[http] WinHttpCrackUrl failed for {}", full_url);
         return std::nullopt;
+    }
+
+    std::wstring hostName;
+    if (urlComp.dwHostNameLength > 0 && urlComp.lpszHostName) {
+        hostName.assign(urlComp.lpszHostName, urlComp.dwHostNameLength);
+    }
+
+    std::wstring requestTarget;
+    if (urlComp.dwUrlPathLength > 0 && urlComp.lpszUrlPath) {
+        requestTarget.assign(urlComp.lpszUrlPath, urlComp.dwUrlPathLength);
+    } else {
+        requestTarget = L"/";
+    }
+    if (urlComp.dwExtraInfoLength > 0 && urlComp.lpszExtraInfo) {
+        requestTarget.append(urlComp.lpszExtraInfo, urlComp.dwExtraInfoLength);
     }
 
     HINTERNET hSession = WinHttpOpen(L"FH6 Universal Radio/1.0", 
@@ -56,12 +67,16 @@ std::optional<std::string> http_get(std::string_view url, std::string_view extra
         return std::nullopt;
     }
 
+    if (!WinHttpSetTimeouts(hSession, 5000, 10000, 10000, 15000)) {
+        log::warn("[http] WinHttpSetTimeouts failed");
+    }
+
     struct SessionGuard {
         HINTERNET h;
         ~SessionGuard() { if (h) WinHttpCloseHandle(h); }
     } sg{hSession};
 
-    HINTERNET hConnect = WinHttpConnect(hSession, hostName, urlComp.nPort, 0);
+    HINTERNET hConnect = WinHttpConnect(hSession, hostName.c_str(), urlComp.nPort, 0);
     if (!hConnect) {
         log::error("[http] WinHttpConnect failed to host");
         return std::nullopt;
@@ -69,7 +84,7 @@ std::optional<std::string> http_get(std::string_view url, std::string_view extra
     SessionGuard cg{hConnect};
 
     DWORD flags = (urlComp.nScheme == INTERNET_SCHEME_HTTPS) ? WINHTTP_FLAG_SECURE : 0;
-    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", urlPath,
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, L"GET", requestTarget.c_str(),
                                             nullptr, WINHTTP_NO_REFERER,
                                             WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
     if (!hRequest) {
@@ -115,14 +130,14 @@ std::optional<std::string> http_get(std::string_view url, std::string_view extra
         DWORD dwAvailable = 0;
         if (!WinHttpQueryDataAvailable(hRequest, &dwAvailable)) {
             log::error("[http] WinHttpQueryDataAvailable failed");
-            break;
+            return std::nullopt;
         }
         if (dwAvailable == 0) break;
 
         std::vector<char> buffer(dwAvailable);
         if (!WinHttpReadData(hRequest, buffer.data(), dwAvailable, &dwDownloaded)) {
             log::error("[http] WinHttpReadData failed");
-            break;
+            return std::nullopt;
         }
         body.append(buffer.data(), dwDownloaded);
     } while (dwDownloaded > 0);

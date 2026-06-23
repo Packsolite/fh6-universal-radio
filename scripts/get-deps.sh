@@ -12,10 +12,10 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 tp=$root/third_party
 
 fetch() {
-    local url=$1 out=$2
-    mkdir -p "$(dirname "$tp/$out")"
+    local url=$1 out=$2 base=${3:-$tp}
+    mkdir -p "$(dirname "$base/$out")"
     printf '\033[36m-> %s\033[0m\n' "$out"
-    curl -fsSL "$url" -o "$tp/$out"
+    curl -fsSL "$url" -o "$base/$out"
 }
 
 fetch https://raw.githubusercontent.com/nlohmann/json/develop/single_include/nlohmann/json.hpp nlohmann/nlohmann/json.hpp
@@ -37,7 +37,7 @@ fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/hde64
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/pstdint.h       minhook/src/hde/pstdint.h
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/table32.h       minhook/src/hde/table32.h
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/table64.h       minhook/src/hde/table64.h
-+fetch "https://dummyimage.com/196x104/1a1a1a/ffffff.png&text=No+Metadata"                 assets/default_artwork.png
+fetch "https://dummyimage.com/196x104/1a1a1a/ffffff.png&text=No+Metadata"                 default_artwork.png "$root/assets"
 
 printf '\033[33mApplying required patches to Kiero...\033[0m\n'
 

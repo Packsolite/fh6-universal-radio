@@ -361,7 +361,7 @@ json handle_download(const json& req) {
     auto url = req.at("url").get<std::string>();
     auto dest_path = req.at("dest_path").get<std::string>();
 
-    auto data = fh6::net::http_get(url);
+    auto data = fh6::net::http_get(url, /*extra_header=*/{});
     if (!data || data->empty()) {
         return {{"ok", false}, {"error", "http_get failed or returned empty data"}};
     }
@@ -372,6 +372,10 @@ json handle_download(const json& req) {
     }
 
     out.write(data->data(), data->size());
+    out.close();
+    if (!out) {
+        return {{"ok", false}, {"error", "failed to write destination file"}};
+    }
     return {{"ok", true}};
 }
 

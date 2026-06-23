@@ -124,6 +124,7 @@ __declspec(noinline) bool SafeExecuteFingerprint(
                 pFence->Release();
                 return false;
             }
+            pFence->Release();
         }
 
         pRbAllocator->Reset();
@@ -263,13 +264,13 @@ void __stdcall HookedExecuteCommandLists(ID3D12CommandQueue* pQueue, UINT NumCom
     if (SUCCEEDED(pQueue->GetDevice(__uuidof(ID3D12Device), (void**)&pDevice))) {
         
         // scan for textures
-        std::vector<ID3D12Resource*> ready_to_fingerprint;
+        std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> ready_to_fingerprint;
         {
             auto now = std::chrono::steady_clock::now();
             std::lock_guard<std::mutex> lock(g_TextureMutex);
             for (auto it = g_UnverifiedResources.begin(); it != g_UnverifiedResources.end(); ) {
                 if (std::chrono::duration_cast<std::chrono::seconds>(now - it->discovered).count() >= 2) {
-                    ready_to_fingerprint.push_back(it->ptr.Get());
+                    ready_to_fingerprint.push_back(it->ptr);
                     it = g_UnverifiedResources.erase(it);
                 } else {
                     ++it;
@@ -304,8 +305,8 @@ void __stdcall HookedExecuteCommandLists(ID3D12CommandQueue* pQueue, UINT NumCom
                 if (SUCCEEDED(pDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, __uuidof(ID3D12CommandAllocator), (void**)&pRbAllocator)) &&
                     SUCCEEDED(pDevice->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, pRbAllocator, nullptr, __uuidof(ID3D12GraphicsCommandList), (void**)&pRbCmdList))) {
 
-                    for (ID3D12Resource* pRes : ready_to_fingerprint) {
-                        SafeExecuteFingerprint(pDevice, pQueue, pRbCmdList, pRbAllocator, pReadbackRes, alignedRowPitch, readbackSize, pRes);
+                    for (const auto& pRes : ready_to_fingerprint) {
+                        SafeExecuteFingerprint(pDevice, pQueue, pRbCmdList, pRbAllocator, pReadbackRes, alignedRowPitch, readbackSize, pRes.Get());
                     }
                     pRbCmdList->Release(); 
                     pRbAllocator->Release();

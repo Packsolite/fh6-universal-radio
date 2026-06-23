@@ -53,9 +53,23 @@ Write-Host "Applying required patches to Kiero..." -ForegroundColor Yellow
 # patch kiero.h to enable D3D12 and MinHook
 $kieroH = Join-Path $tp "kiero\kiero.h"
 $kieroHContent = Get-Content $kieroH -Raw
+$beforeH = $kieroHContent
 $kieroHContent = $kieroHContent -replace 'KIERO_INCLUDE_D3D12\s+0', 'KIERO_INCLUDE_D3D12  1'
 $kieroHContent = $kieroHContent -replace 'KIERO_USE_MINHOOK\s+0', 'KIERO_USE_MINHOOK    1'
+if ($kieroHContent -eq $beforeH -or $kieroHContent -notmatch 'KIERO_INCLUDE_D3D12\s+1' -or $kieroHContent -notmatch 'KIERO_USE_MINHOOK\s+1') {
+   throw "Kiero header patch failed; upstream file layout changed."
+}
 Set-Content -Path $kieroH -Value $kieroHContent -NoNewline
+
+$kieroCpp = Join-Path $tp "kiero\kiero.cpp"
+$kieroCppContent = Get-Content $kieroCpp -Raw
+$beforeCpp = $kieroCppContent
+$kieroCppContent = $kieroCppContent -replace '# include "minhook/include/MinHook.h"', '# include "MinHook.h"'
+$kieroCppContent = "`#include` <stdlib.h>`r`n" + $kieroCppContent
+if ($kieroCppContent -eq $beforeCpp -or $kieroCppContent -notmatch '# include "MinHook.h"') {
+   throw "Kiero cpp patch failed; upstream file layout changed."
+}
+Set-Content -Path $kieroCpp -Value $kieroCppContent -NoNewline
 
 # patch kiero.cpp to add stdlib.h and fix the MinHook include path
 $kieroCpp = Join-Path $tp "kiero\kiero.cpp"

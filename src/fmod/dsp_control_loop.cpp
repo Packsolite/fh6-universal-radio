@@ -560,6 +560,7 @@ void ControlLoop::run_playback_state_machines(time_point now) noexcept {
 }
 
 void ControlLoop::push_metadata() noexcept {
+    static std::string current_artwork_url{};
     auto* a = bridge_.manager().active();
     if (!a) {
         meta_.update("FH6 Universal Radio", "Idle");
@@ -571,6 +572,7 @@ void ControlLoop::push_metadata() noexcept {
     // it will overwrite whatever native metadata the game wrote in the meantime
     if (a->name() == "vanilla_radio") {
         meta_.reset_cache();
+        current_artwork_url.clear();
         return;
     }
 
@@ -581,7 +583,6 @@ void ControlLoop::push_metadata() noexcept {
         return;
     }
 
-    static std::string current_artwork_url = "";
     if (info.artwork_url != current_artwork_url) {
         current_artwork_url = info.artwork_url;
         TextureInjector::instance().update_artwork_url(current_artwork_url);

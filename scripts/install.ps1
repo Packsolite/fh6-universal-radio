@@ -38,7 +38,7 @@ Backup-AndCopy (Join-Path $dist "version.dll") (Join-Path $GameDir "version.dll"
 $dataDir = Join-Path $GameDir "fh6-radio"
 if (-not (Test-Path $dataDir)) { New-Item -ItemType Directory -Force -Path $dataDir | Out-Null }
 Copy-Item -Recurse -Force (Join-Path $dist "fh6-radio\ui") $dataDir
-Copy-Item -Recurse -Force (Join-Path $root "assets") (Join-Path $dataDir "assets")
+Copy-Item -Recurse -Force (Join-Path $dist "fh6-radio\assets") (Join-Path $dataDir "assets")
 $cfg = Join-Path $dataDir "config.toml"
 if (-not (Test-Path $cfg)) {
     Copy-Item (Join-Path $dist "fh6-radio\config.toml") $cfg
