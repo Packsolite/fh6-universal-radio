@@ -149,7 +149,7 @@ void TextureInjector::update_artwork_url(const std::string& url) {
 
             // resize image using STB
             std::vector<unsigned char> resized_data(new_w * new_h * 4);
-            stbir_resize_uint8_linear(img_data, width, height, 0, resized_data.data(), new_w, new_h, 0, (stbir_pixel_layout)4);
+            stbir_resize_uint8_linear(img_data, width, height, 0, resized_data.data(), new_w, new_h, 0, STBIR_RGBA);
             stbi_image_free(img_data);
 
             // create transparent padded canvas
