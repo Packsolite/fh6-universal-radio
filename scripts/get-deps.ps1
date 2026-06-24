@@ -58,6 +58,7 @@ $kieroHContent = Get-Content $kieroH -Raw
 $beforeH = $kieroHContent
 $kieroHContent = $kieroHContent -replace 'KIERO_INCLUDE_D3D12\s+0', 'KIERO_INCLUDE_D3D12  1'
 $kieroHContent = $kieroHContent -replace 'KIERO_USE_MINHOOK\s+0', 'KIERO_USE_MINHOOK    1'
+$kieroHContent = $kieroHContent -replace 'void\*\s+proc\s*=\s*::GetProcAddress', 'FARPROC proc = ::GetProcAddress'
 if ($kieroHContent -eq $beforeH -or $kieroHContent -notmatch 'KIERO_INCLUDE_D3D12\s+1' -or $kieroHContent -notmatch 'KIERO_USE_MINHOOK\s+1') {
    throw "Kiero header patch failed; upstream file layout changed."
 }
@@ -67,6 +68,7 @@ $kieroCpp = Join-Path $tp "kiero\kiero.cpp"
 $kieroCppContent = Get-Content $kieroCpp -Raw
 $beforeCpp = $kieroCppContent
 $kieroCppContent = $kieroCppContent -replace '# include "minhook/include/MinHook.h"', '# include "MinHook.h"'
+$kieroCppContent = $kieroCppContent -replace 'void\*\s+proc\s*=\s*::GetProcAddress', 'FARPROC proc = ::GetProcAddress'
 $kieroCppContent = "#include <stdlib.h>`r`n" + $kieroCppContent
 if ($kieroCppContent -eq $beforeCpp -or $kieroCppContent -notmatch '# include "MinHook.h"') {
    throw "Kiero cpp patch failed; upstream file layout changed."

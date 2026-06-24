@@ -20,6 +20,7 @@
 
 #include "fh6/net/http_get.hpp"
 #include <fstream>
+#include <filesystem>
 
 #include <windows.h>
 #include <sddl.h>
@@ -366,7 +367,7 @@ json handle_download(const json& req) {
         return {{"ok", false}, {"error", "http_get failed or returned empty data"}};
     }
 
-    std::ofstream out(widen(dest_path), std::ios::binary);
+    std::ofstream out(std::filesystem::path(dest_path), std::ios::binary);
     if (!out) {
         return {{"ok", false}, {"error", "failed to open destination file for writing"}};
     }
