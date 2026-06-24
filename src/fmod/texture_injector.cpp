@@ -141,9 +141,15 @@ void TextureInjector::update_artwork_url(const std::string& url) {
             }
 
             // calculate aspect-ratio preserving dimensions
+            int square_size = 104;
             int target_w = 196;
             int target_h = 104;
-            float scale = std::min((float)target_w / width, (float)target_h / height);
+            
+            // border settings
+            int border_thickness = 4;
+            
+            // calculate scale to fill the 104x104 square
+            float scale = std::max((float)square_size / width, (float)square_size / height);
             int new_w = std::max(1, (int)(width * scale));
             int new_h = std::max(1, (int)(height * scale));
 
@@ -155,17 +161,55 @@ void TextureInjector::update_artwork_url(const std::string& url) {
             // create transparent padded canvas
             std::vector<unsigned char> padded_data(target_w * target_h * 4, 0);
 
-            // copy resized image into the center of the padded canvas
-            int offset_x = 0;                       // 0 forces it to the far left edge
-            int offset_y = (target_h - new_h) / 2; // keeps it vertically centered
-            for (int y = 0; y < new_h; ++y) {
-                for (int x = 0; x < new_w; ++x) {
-                    int src_idx = (y * new_w + x) * 4;
-                    int dst_idx = ((y + offset_y) * target_w + (x + offset_x)) * 4;
-                    padded_data[dst_idx] = resized_data[src_idx];
-                    padded_data[dst_idx+1] = resized_data[src_idx+1];
-                    padded_data[dst_idx+2] = resized_data[src_idx+2];
-                    padded_data[dst_idx+3] = resized_data[src_idx+3];
+            // calculate source offsets to center-crop
+            int src_offset_x = (new_w - square_size) / 2;
+            int src_offset_y = (new_h - square_size) / 2;
+
+            // calculate the average color of the cropped square
+            long long total_r = 0, total_g = 0, total_b = 0;
+            for (int y = 0; y < square_size; ++y) {
+                for (int x = 0; x < square_size; ++x) {
+                    int src_idx = ((y + src_offset_y) * new_w + (x + src_offset_x)) * 4;
+                    total_r += resized_data[src_idx];
+                    total_g += resized_data[src_idx + 1];
+                    total_b += resized_data[src_idx + 2];
+                }
+            }
+            
+            int pixel_count = square_size * square_size;
+            unsigned char avg_r = (unsigned char)(total_r / pixel_count);
+            unsigned char avg_g = (unsigned char)(total_g / pixel_count);
+            unsigned char avg_b = (unsigned char)(total_b / pixel_count);
+
+            // border shade
+            float brightness_factor = 0.6f; 
+            unsigned char b_r = (unsigned char)(avg_r * brightness_factor);
+            unsigned char b_g = (unsigned char)(avg_g * brightness_factor);
+            unsigned char b_b = (unsigned char)(avg_b * brightness_factor);
+            unsigned char b_a = 255;
+
+            // copy the cropped square into the far left, applying the border
+            for (int y = 0; y < square_size; ++y) {
+                for (int x = 0; x < square_size; ++x) {
+                    int dst_idx = (y * target_w + x) * 4; 
+
+                    // check if the current pixel falls within the border perimeter
+                    if (x < border_thickness || x >= square_size - border_thickness ||
+                        y < border_thickness || y >= square_size - border_thickness) {
+                        
+                        // draw the dynamic border color
+                        padded_data[dst_idx]   = b_r;
+                        padded_data[dst_idx+1] = b_g;
+                        padded_data[dst_idx+2] = b_b;
+                        padded_data[dst_idx+3] = b_a;
+                    } else {
+                        // draw the image pixel
+                        int src_idx = ((y + src_offset_y) * new_w + (x + src_offset_x)) * 4;
+                        padded_data[dst_idx]   = resized_data[src_idx];
+                        padded_data[dst_idx+1] = resized_data[src_idx+1];
+                        padded_data[dst_idx+2] = resized_data[src_idx+2];
+                        padded_data[dst_idx+3] = resized_data[src_idx+3];
+                    }
                 }
             }
 

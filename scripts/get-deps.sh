@@ -39,7 +39,7 @@ fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/hde64
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/pstdint.h       minhook/src/hde/pstdint.h
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/table32.h       minhook/src/hde/table32.h
 fetch https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/table64.h       minhook/src/hde/table64.h
-fetch "https://dummyimage.com/196x104/1a1a1a/ffffff.png&text=No+Metadata"                 default_artwork.png "$root/assets"
+fetch "https://dummyimage.com/104x104/1a1a1a/ffffff.png&text=No+Metadata"                 default_artwork.png "$root/assets"
 
 printf '\033[33mApplying required patches to Kiero...\033[0m\n'
 
