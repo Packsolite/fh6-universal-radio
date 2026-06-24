@@ -45,7 +45,6 @@ printf '\033[33mApplying required patches to Kiero...\033[0m\n'
 # Patch kiero.h to enable D3D12 and MinHook
 sed -i 's/KIERO_INCLUDE_D3D12  0/KIERO_INCLUDE_D3D12  1/g' "$tp/kiero/kiero.h"
 sed -i 's/KIERO_USE_MINHOOK    0/KIERO_USE_MINHOOK    1/g' "$tp/kiero/kiero.h"
-sed -i 's/void\* proc = ::GetProcAddress/FARPROC proc = ::GetProcAddress/g' "$tp/kiero/kiero.h"
 
 if ! grep -q "KIERO_INCLUDE_D3D12  1" "$tp/kiero/kiero.h" || ! grep -q "KIERO_USE_MINHOOK    1" "$tp/kiero/kiero.h"; then
     printf '\033[31mError: kiero.h patch failed. Upstream layout may have changed.\033[0m\n' >&2
@@ -63,4 +62,4 @@ if ! grep -q '# include "MinHook.h"' "$tp/kiero/kiero.cpp" || ! grep -q '#includ
     exit 1
 fi
 
-printf '\n\033[32mAll dependencies and assets fetched successfully.\033[0m\n'
+printf '\n\033[32mAll dependencies fetched into %s.\033[0m\n' "$tp"

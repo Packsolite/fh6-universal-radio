@@ -8,7 +8,6 @@
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $tp   = Join-Path $root "third_party"
-$assets = Join-Path $root "assets"
 
 $deps = @(
     # original headers
@@ -74,4 +73,4 @@ if ($kieroCppContent -eq $beforeCpp -or
 }
 Set-Content -Path $kieroCpp -Value $kieroCppContent -NoNewline
 
-Write-Host "`nAll dependencies and assets fetched successfully." -ForegroundColor Green
+Write-Host "`nAll dependencies fetched into $tp." -ForegroundColor Green
