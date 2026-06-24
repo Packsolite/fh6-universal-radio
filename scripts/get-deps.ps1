@@ -36,10 +36,7 @@ $deps = @(
     @{ Url = "https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/hde64.h"; Out = "minhook\src\hde\hde64.h"; Base = $tp },
     @{ Url = "https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/pstdint.h"; Out = "minhook\src\hde\pstdint.h"; Base = $tp },
     @{ Url = "https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/table32.h"; Out = "minhook\src\hde\table32.h"; Base = $tp },
-    @{ Url = "https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/table64.h"; Out = "minhook\src\hde\table64.h"; Base = $tp },
-
-    # default artwork
-    @{ Url = "https://dummyimage.com/104x104/1a1a1a/ffffff.png&text=No+Metadata"; Out = "default_artwork.png"; Base = $assets }
+    @{ Url = "https://raw.githubusercontent.com/TsudaKageyu/minhook/master/src/hde/table64.h"; Out = "minhook\src\hde\table64.h"; Base = $tp }
 )
 
 foreach ($d in $deps) {

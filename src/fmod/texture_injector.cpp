@@ -76,6 +76,7 @@ void TextureInjector::update_artwork_url(const std::string& url) {
             } file_guard{raw_path, png_path, dds_path};
 
             bool has_valid_source = false;
+            bool is_default_artwork = false;
 
             if (!url.empty()) {
                 log::info("[dx12] job {}: delegating artwork download to worker process: {}", my_job_id, url);
@@ -103,6 +104,7 @@ void TextureInjector::update_artwork_url(const std::string& url) {
                     std::filesystem::copy_file(default_art, raw_path, std::filesystem::copy_options::overwrite_existing, ec);
                     if (!ec) {
                         has_valid_source = true;
+                        is_default_artwork = true;
                     } else {
                         log::warn("[dx12] job {}: failed to copy default artwork", my_job_id);
                     }
@@ -146,7 +148,7 @@ void TextureInjector::update_artwork_url(const std::string& url) {
             int target_h = 104;
             
             // border settings
-            int border_thickness = 4;
+            int border_thickness = is_default_artwork ? 0 : 4; 
             
             // calculate scale to fill the 104x104 square
             float scale = std::max((float)square_size / width, (float)square_size / height);
