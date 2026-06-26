@@ -145,9 +145,19 @@ void TextureInjector::update_artwork_url(const std::string& url) {
             // calculate aspect-ratio preserving dimensions
             // wait until the DX12 hook discovers the target UI size
             int target_h = 0;
+            const auto height_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
             while ((target_h = target_height_.load()) == 0) {
                 if (latest_job_id_.load() != my_job_id) return;
+                if (std::chrono::steady_clock::now() >= height_deadline) {
+                    log::warn("[dx12] job {}: timed out waiting for target texture height", my_job_id);
+                    return;
+                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+
+            if (target_h != 104 && target_h != 196) {
+                log::warn("[dx12] job {}: unsupported target texture height {}", my_job_id, target_h);
+                return;
             }
 
             int square_size = 104;

@@ -191,8 +191,10 @@ __declspec(noinline) bool SafeExecuteInjection(
             srcBox.left = 0;
             srcBox.top = 0;
             srcBox.front = 0;
-            srcBox.right = (UINT)desc.Width;
-            srcBox.bottom = (UINT)desc.Height;
+            const UINT srcWidth = pSrcLoc->PlacedFootprint.Footprint.Width;
+            const UINT srcHeight = pSrcLoc->PlacedFootprint.Footprint.Height;
+            srcBox.right = std::min<UINT>(static_cast<UINT>(desc.Width), srcWidth);
+            srcBox.bottom = std::min<UINT>(static_cast<UINT>(desc.Height), srcHeight);
             srcBox.back = 1;
 
             D3D12_RESOURCE_BARRIER barrier = {};
