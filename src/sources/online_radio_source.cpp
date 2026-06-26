@@ -78,6 +78,20 @@ void OnlineRadioSource::set_target(std::string url, std::string name, std::strin
     target_logo_ = std::move(logo);
 }
 
+void OnlineRadioSource::on_radio_audible(bool audible) {
+    std::scoped_lock lk{mu_};
+    if (audible == audible_) return;
+    audible_ = audible;
+    if (audible) {
+        log::info("[online_radio] radio audible -- reconnecting to live stream");
+        drain_pending_ = true;
+        start_pipe_locked();
+    } else {
+        log::info("[online_radio] radio inaudible -- disconnecting stream");
+        pipe_.reset();
+    }
+}
+
 void OnlineRadioSource::start_pipe_locked() {
     stop_pipe_locked();
 
@@ -195,6 +209,7 @@ void OnlineRadioSource::stop_pipe_locked() {
 
 void OnlineRadioSource::play() {
     std::scoped_lock lk{mu_};
+    audible_ = true;
     if (!pipe_) start_pipe_locked();
     if (pipe_) state_.store(PlaybackState::playing, std::memory_order_release);
 }
@@ -214,6 +229,7 @@ void OnlineRadioSource::stop() {
 
 void OnlineRadioSource::next() {
     std::scoped_lock lk{mu_};
+    audible_ = true;
     target_url_.clear();
     if (cfg_.stations.empty()) return;
 
@@ -224,6 +240,7 @@ void OnlineRadioSource::next() {
 
 void OnlineRadioSource::previous() {
     std::scoped_lock lk{mu_};
+    audible_ = true;
     target_url_.clear();
     if (cfg_.stations.empty()) return;
 
@@ -262,6 +279,12 @@ void OnlineRadioSource::pump(RingBuffer& ring) {
     if (st != PlaybackState::playing && st != PlaybackState::buffering) return;
 
     std::scoped_lock lk{mu_};
+
+    if (drain_pending_) {
+        ring.drain();
+        drain_pending_ = false;
+    }
+
     Pipe* p = pipe_.get();
     if (!p) return;
 
