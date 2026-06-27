@@ -209,7 +209,7 @@ void OnlineRadioSource::stop_pipe_locked() {
 
 void OnlineRadioSource::play() {
     std::scoped_lock lk{mu_};
-    audible_ = true;
+    drain_pending_ = true;
     if (!pipe_) start_pipe_locked();
     if (pipe_) state_.store(PlaybackState::playing, std::memory_order_release);
 }
@@ -229,25 +229,27 @@ void OnlineRadioSource::stop() {
 
 void OnlineRadioSource::next() {
     std::scoped_lock lk{mu_};
-    audible_ = true;
     target_url_.clear();
     if (cfg_.stations.empty()) return;
 
     current_station_idx_ = (current_station_idx_ + 1) % cfg_.stations.size();
-    start_pipe_locked();
-    if (pipe_) state_.store(PlaybackState::playing, std::memory_order_release);
+    if (audible_) {
+        start_pipe_locked();
+        if (pipe_) state_.store(PlaybackState::playing, std::memory_order_release);
+    }
 }
 
 void OnlineRadioSource::previous() {
     std::scoped_lock lk{mu_};
-    audible_ = true;
     target_url_.clear();
     if (cfg_.stations.empty()) return;
 
     current_station_idx_ =
         (current_station_idx_ == 0 ? cfg_.stations.size() : current_station_idx_) - 1;
-    start_pipe_locked();
-    if (pipe_) state_.store(PlaybackState::playing, std::memory_order_release);
+    if (audible_) {
+        start_pipe_locked();
+        if (pipe_) state_.store(PlaybackState::playing, std::memory_order_release);
+    }
 }
 
 TrackInfo OnlineRadioSource::current_track() const {
@@ -275,15 +277,15 @@ void OnlineRadioSource::set_playback_options(const PlaybackConfig& opts) {
 }
 
 void OnlineRadioSource::pump(RingBuffer& ring) {
-    auto st = state_.load(std::memory_order_acquire);
-    if (st != PlaybackState::playing && st != PlaybackState::buffering) return;
-
     std::scoped_lock lk{mu_};
 
     if (drain_pending_) {
         ring.drain();
         drain_pending_ = false;
     }
+
+    auto st = state_.load(std::memory_order_relaxed);
+    if (st != PlaybackState::playing && st != PlaybackState::buffering) return;
 
     Pipe* p = pipe_.get();
     if (!p) return;
